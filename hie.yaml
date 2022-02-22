@@ -1,0 +1,13 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "bril-hs:lib"
+
+    - path: "./app/Main.hs"
+      component: "bril-hs:exe:bril-hs-exe"
+
+    - path: "./app/Paths_bril_hs.hs"
+      component: "bril-hs:exe:bril-hs-exe"
+
+    - path: "./test"
+      component: "bril-hs:test:bril-hs-test"

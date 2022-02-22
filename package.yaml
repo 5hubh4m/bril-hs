@@ -1,0 +1,50 @@
+name:       bril-hs
+version:    0.1.0.0
+github:     "5hubh4m/bril-hs"
+license:    BSD3
+author:     "Shubham Chaudhary"
+maintainer: "shubhamchaudhary1996@gmail.com"
+copyright:  "2022 Shubham Chaudhary"
+
+extra-source-files:
+- README.md
+
+description: This is a library to process Bril programs in Haskell <https://github.com/5hubh4m/bril-hs#readme>.
+
+dependencies:
+- aeson
+- base
+- bytestring
+- containers
+- hashable
+- scientific
+- text
+- unordered-containers
+- vector
+
+library:
+  source-dirs: src
+
+executables:
+  bril-hs-exe:
+    main:        Main.hs
+    source-dirs: app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - bril-hs
+
+tests:
+  bril-hs-test:
+    main:        Spec.hs
+    source-dirs: test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - bril-hs
+    - QuickCheck
+    - quickcheck-instances
