@@ -61,7 +61,7 @@ stack test
 
 ...
 bril-hs> test (suite: bril-hs-test)
-                     
+
 === prop_dominatorsDefn from test/Bril/Structure/Spec.hs:69 ===
 +++ OK, passed 100 tests.
 

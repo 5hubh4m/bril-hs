@@ -38,10 +38,10 @@ instance Arbitrary CFG where
       -- all vertices in the graph are reachable from the entry
       reaches en g = all (\x -> reachable g x en) $ M.keys g
       -- takes the list of blocks and shuffles it and
-      -- chooses at most 2 blocks as successors 
-      edges bs b   = do n     <- chooseInt (0, 2)
+      -- chooses at most 2 blocks as successors
+      edges bs b   = do num   <- frequency [(1, return 0), (8, return 1), (1, return 2)]
                         succs <- shuffle bs
-                        return (b, S.fromList $ take n succs)
+                        return (b, S.fromList $ take num succs)
 
 -- | navigate all acyclic paths from b to a in the the graph
 --   and apply the given operations to obtain a final result
@@ -72,9 +72,9 @@ paths = search (\x -> S.singleton [x]) (\x -> S.map ([x] ++)) unions
 --   are all the the blocks that must occur in all
 --   paths from entry to that block
 prop_dominatorsDefn :: CFG -> Bool
-prop_dominatorsDefn cfg = and $ M.mapWithKey (\v ds -> ds == doms v) $ dominators cfg
+prop_dominatorsDefn cfg = and . M.mapWithKey (\v ds -> ds == doms v) $ dominators cfg
   where
-    start = entry cfg
+    start   = entry cfg
     succs   = successors cfg
     -- this find the dominators of a given node by
     -- taking the intersection of all the common nodes
@@ -82,14 +82,13 @@ prop_dominatorsDefn cfg = and $ M.mapWithKey (\v ds -> ds == doms v) $ dominator
     doms v  = intersections . S.map S.fromList $ paths succs v start
 {-# INLINABLE prop_dominatorsDefn #-}
 
--- | defines the property that the dominators of a
+-- | defines the property that the dominatees of a
 --   block b are it's recursive children in a
 --   dominator tree
 prop_dominationTreeDefn :: CFG -> Bool
-prop_dominationTreeDefn cfg = snd $ prop tree
+prop_dominationTreeDefn cfg = snd . prop $ dominationTree cfg
   where
     doms             = invert $ dominators cfg
-    tree             = dominationTree cfg
     -- this finds the recursive children of the given node
     -- of the tree along with keeping track of whether
     -- the tree property is true
@@ -101,7 +100,7 @@ prop_dominationTreeDefn cfg = snd $ prop tree
 
 -- | defines the property that the domination frontier
 --   of a block are the blocks that are one edge away
---   from being dominated by that block
+--   from being strictly dominated by that block
 prop_dominationFrontierDefn :: CFG -> Bool
 prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
   where
@@ -114,7 +113,7 @@ prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
     prop  v fs = null . S.intersection fs $ strict v
     -- this property says that domination frontier
     -- of v is one edge away from nodes v dominates
-    prop' v = not . any (null . S.intersection (doms M.! v) . (preds M.!))
+    prop' v    = not . any (null . S.intersection (doms M.! v) . (preds M.!))
     -- conbine both the properties together
     props v fs = prop v fs && prop v fs
 {-# INLINABLE prop_dominationFrontierDefn #-}
