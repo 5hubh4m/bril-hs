@@ -62,15 +62,14 @@ stack test
 ...
 bril-hs> test (suite: bril-hs-test)
 
-=== prop_dominatorsDefn from test/Bril/Structure/Spec.hs:69 ===
-+++ OK, passed 100 tests.
+=== prop_dominatorsDefn from test/Bril/Structure/Spec.hs:75 ===
++++ OK, passed 10000 tests.
 
-=== prop_dominationTreeDefn from test/Bril/Structure/Spec.hs:82 ===
-+++ OK, passed 100 tests.
+=== prop_dominationTreeDefn from test/Bril/Structure/Spec.hs:91 ===
++++ OK, passed 10000 tests.
 
-=== prop_dominationFrontierDefn from test/Bril/Structure/Spec.hs:98 ===
-+++ OK, passed 100 tests.
-
+=== prop_dominationFrontierDefn from test/Bril/Structure/Spec.hs:107 ===
++++ OK, passed 10000 tests.
 
 bril-hs> Test suite bril-hs-test passed
 Completed 2 action(s).
