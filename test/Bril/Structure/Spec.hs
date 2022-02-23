@@ -46,7 +46,7 @@ instance Arbitrary CFG where
 -- | navigate all acyclic paths from b to a in the the graph
 --   and apply the given operations to obtain a final result
 search :: (Eq a, Hashable a, Eq c, Hashable c) => (a -> b) -> (a -> b -> c) -> (S.HashSet c -> b) -> M.HashMap a (S.HashSet a) -> a -> a -> b
-search final transform collect graph a b = fn S.empty a b
+search final transform collect graph = fn S.empty
   where
     fn seen a b
       | a == b    = final a
@@ -54,14 +54,19 @@ search final transform collect graph a b = fn S.empty a b
       where
         seen' = S.insert b seen
         next  = S.difference (graph M.! b) seen'
+{-# INLINABLE search #-}
 
 -- | whether the node a is reachable from the node b in the given graph
 reachable :: (Eq a, Hashable a) => M.HashMap a (S.HashSet a) -> a -> a -> Bool
 reachable = search (const True) (const id) or
+{-# SPECIALIZE reachable :: M.HashMap Ident (S.HashSet Ident) -> Ident -> Ident -> Bool #-}
+{-# INLINABLE reachable #-}
 
 -- | get all acyclic paths from b to a in the given graph
 paths :: (Eq a, Hashable a) => M.HashMap a (S.HashSet a) -> a -> a -> S.HashSet [a]
 paths = search (\x -> S.singleton [x]) (\x -> S.map ([x] ++)) unions
+{-# SPECIALIZE paths :: M.HashMap Ident (S.HashSet Ident) -> Ident -> Ident -> S.HashSet [Ident] #-}
+{-# INLINABLE paths #-}
 
 -- | defines the property that dominators of a block b
 --   are all the the blocks that must occur in all
@@ -75,6 +80,7 @@ prop_dominatorsDefn cfg = and $ M.mapWithKey (\v ds -> ds == doms v) $ dominator
     -- taking the intersection of all the common nodes
     -- in all acyclic paths from the entry to that node
     doms v  = intersections . S.map S.fromList $ paths succs v start
+{-# INLINABLE prop_dominatorsDefn #-}
 
 -- | defines the property that the dominators of a
 --   block b are it's recursive children in a
@@ -91,6 +97,7 @@ prop_dominationTreeDefn cfg = snd $ prop tree
       where
         (ss, bs) = unzip $ prop <$> ts
         ds       = S.insert r $ unions ss
+{-# INLINABLE prop_dominationTreeDefn #-}
 
 -- | defines the property that the domination frontier
 --   of a block are the blocks that are one edge away
@@ -110,6 +117,7 @@ prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
     prop' v = not . any (null . S.intersection (doms M.! v) . (preds M.!))
     -- conbine both the properties together
     props v fs = prop v fs && prop v fs
+{-# INLINABLE prop_dominationFrontierDefn #-}
 
 -- let quick check define all the tests for us
 return []

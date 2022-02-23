@@ -41,12 +41,14 @@ basicBlocks (Function _ _ _ instrs) = finalize $ filter (not . null) $ process $
     fn (blocks, curr) instr
       | terminator instr = (blocks ++ [curr ++ [instr]], [])
       | otherwise        = (blocks, curr ++ [instr])
+{-# INLINABLE basicBlocks #-}
 
 -- | get the set of all labels in a function
 allLabels :: Function -> S.HashSet Ident
 allLabels (Function _ _ _ instrs) = foldl' fn S.empty instrs
   where
     fn set i = S.union set $ S.fromList $ labels i
+{-# INLINABLE allLabels #-}
 
 -- | uniquely label each block in the list of basic blocks
 blockLabels :: Function -> [(Ident, [Instruction])]
@@ -63,6 +65,7 @@ blockLabels f = fn $ basicBlocks f
         label  = case head block of
                    Label l -> l
                    _       -> findUnique $ length blocks
+{-# INLINABLE blockLabels #-}
 
 -- | takes in a association list of blocks and their labels
 --   and returns a map from a block label to it's successors
@@ -84,6 +87,7 @@ graph f = foldl' fn init $ zip [0..] bs
                  (Effect (Jmp l))      -> S.singleton l
                  _ | idx < n - 1       -> S.singleton . fst $ bs !! (idx + 1)
                  _                     -> S.empty
+{-# INLINABLE graph #-}
 
 -- | takes in a graph of successors and returns a set of prececessors
 --   in other words, invert a graph's matrix
@@ -92,6 +96,8 @@ invert succ = M.foldlWithKey' fn init succ
   where
     init    = M.fromList $ zip (M.keys succ) $ repeat S.empty
     fn map k vs = foldl' (flip $ M.adjust (S.insert k)) map vs
+{-# SPECIALIZE invert :: M.HashMap Ident (S.HashSet Ident) -> M.HashMap Ident (S.HashSet Ident) #-}
+{-# INLINEABLE invert #-}
 
 -- | create the CFG of a function
 cfg :: Function -> CFG
@@ -99,10 +105,12 @@ cfg f = CFG (fst $ head ls) ll (M.fromList ls) (graph f)
   where
     ll = allLabels f
     ls = blockLabels f
+{-# INLINABLE cfg #-}
 
 -- | get the prececcssor graph in a CFG
 prececessors :: CFG -> M.HashMap Ident (S.HashSet Ident)
 prececessors = invert . successors
+{-# INLINABLE prececessors #-}
 
 -- | create a list of CFG nodes in post-order traversal
 postorder :: CFG -> [Ident]
@@ -117,14 +125,21 @@ postorder cfg = snd . fn S.empty $ entry cfg
         next         = S.toList $ S.difference children seen
         seen'        = S.insert root seen
         upd (s, l) n = second (l ++) $ fn s n
+{-# INLINABLE postorder #-}
 
 -- | find the intersection of all the sets in the given container
 intersections :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
 intersections x = if null x then S.empty else foldl1 S.intersection x
+{-# SPECIALIZE intersections :: [S.HashSet Ident] -> S.HashSet Ident #-}
+{-# SPECIALIZE intersections :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
+{-# INLINABLE intersections #-}
 
 -- | find the union of all the sets in the given container
 unions :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
 unions = foldl' S.union S.empty
+{-# SPECIALIZE unions :: [S.HashSet Ident] -> S.HashSet Ident #-}
+{-# SPECIALIZE unions :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
+{-# INLINABLE unions #-}
 
 -- | finds the dominators of all blocks in a CFG
 dominators :: CFG -> M.HashMap Ident (S.HashSet Ident)
@@ -140,6 +155,7 @@ dominators cfg = go init
     upd (ch, m) v = let s = fn m v in (ch || s /= m M.! v, M.insert v s m)
     go doms       = let (change, doms') = foldl' upd (False, doms) verts in
                     if not change then doms else go doms'
+{-# INLINABLE dominators #-}
 
 -- | find the domination tree of the CGF
 dominationTree :: CFG -> Tree Ident
@@ -153,6 +169,7 @@ dominationTree cfg = fn start
     fn r      = Node r $ fn <$> S.toList children
       where
         children = S.filter (\d -> (doms M.! r) == strict d) $ strict' r
+{-# INLINABLE dominationTree #-}
 
 -- | find the domination frontier of the CFG
 dominationFrontier :: CFG -> M.HashMap Ident (S.HashSet Ident)
@@ -161,3 +178,4 @@ dominationFrontier cfg = M.mapWithKey fn doms'
     succs  = successors cfg
     doms'  = invert $ dominators cfg
     fn v s = S.difference (unions $ S.map (succs M.!) s) (S.delete v s)
+{-# INLINABLE dominationFrontier #-}
