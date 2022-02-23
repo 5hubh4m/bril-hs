@@ -14,7 +14,7 @@ import qualified Data.Text     as T
 newtype Ident = Ident
               { unIdent :: T.Text
               }
-              deriving (Eq, Generic, Hashable)
+              deriving (Eq, Ord, Generic, Hashable)
 
 -- | define a show instance for identifiers
 instance Show Ident where

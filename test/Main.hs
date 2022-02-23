@@ -1,7 +1,6 @@
 import Bril.Structure.Spec
 import Test.QuickCheck
 
--- | run all checks imported in
---   modules
+-- run all the tests imported from the specs
 main :: IO Bool
-main = check
+main = checkStructure

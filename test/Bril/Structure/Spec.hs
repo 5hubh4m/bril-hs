@@ -14,32 +14,33 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet        as S
 import qualified Data.Text           as T
 
--- | define the maximum size of a randomly generated CFG
-maxCFGBlocks :: Int
-maxCFGBlocks = 20
-
 -- | define an arbitrary instance for identifiers
 --   which are characters from 'a' to 'z' or 'A' to 'Z'
 instance Arbitrary Ident where
-  arbitrary = do ident <- oneof [chooseEnum ('A', 'Z'), chooseEnum ('a', 'z')]
+  arbitrary = do ident <- arbitraryPrintableChar
                  return . Ident . T.pack $ [ident]
+
+-- | removes repeating elements a list
+distinct :: Eq a => [a] -> [a]
+distinct []  = []
+distinct [x] = [x]
+distinct (x : y : xs)
+  | x == y    = distinct (x : xs)
+  | otherwise = x : distinct (y : xs)
+{-# SPECIALIZE distinct :: [Ident] -> [Ident] #-}
+{-# INLINABLE distinct #-}
 
 -- | define an arbitrary instance for CFGs
 --   with empty instructions and randomly
 --   generated edges
 instance Arbitrary CFG where
-  arbitrary = do blocks <- resize maxCFGBlocks $ listOf1 arbitrary
-                 let en = head blocks
-                 let gs = M.fromList <$> mapM (edges blocks) blocks
-                 graph <- suchThat gs $ reaches en
-                 return $ CFG en (S.fromList blocks) M.empty graph
+  arbitrary = do blocks <- suchThat (distinct <$> orderedList) (not . null)
+                 graph  <- M.fromList <$> mapM (edges blocks) blocks
+                 return $ CFG (head blocks) (S.fromList blocks) M.empty graph
     where
-      -- takes an entry node and a graph and returns whether
-      -- all vertices in the graph are reachable from the entry
-      reaches en g = all (\x -> reachable g x en) $ M.keys g
       -- takes the list of blocks and shuffles it and
       -- chooses at most 2 blocks as successors
-      edges bs b   = do num   <- frequency [(1, return 0), (8, return 1), (1, return 2)]
+      edges bs b   = do num   <- frequency [(1, return 0), (6, return 1), (3, return 2)]
                         succs <- shuffle bs
                         return (b, S.fromList $ take num succs)
 
@@ -79,6 +80,8 @@ prop_dominatorsDefn cfg = and . M.mapWithKey (\v ds -> ds == doms v) $ dominator
     -- this find the dominators of a given node by
     -- taking the intersection of all the common nodes
     -- in all acyclic paths from the entry to that node
+    -- with the additional criteria that each node
+    -- dominates itself by default
     doms v  = intersections . S.map S.fromList $ paths succs v start
 {-# INLINABLE prop_dominatorsDefn #-}
 
@@ -118,6 +121,6 @@ prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
     props v fs = prop v fs && prop v fs
 {-# INLINABLE prop_dominationFrontierDefn #-}
 
--- let quick check define all the tests for us
+-- let quick check define our tests for us
 return []
-check = $quickCheckAll
+checkStructure = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 10000 })

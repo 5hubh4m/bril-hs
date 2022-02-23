@@ -113,6 +113,7 @@ prececessors = invert . successors
 {-# INLINABLE prececessors #-}
 
 -- | create a list of CFG nodes in post-order traversal
+--   starting from the root node
 postorder :: CFG -> [Ident]
 postorder cfg = snd . fn S.empty $ entry cfg
   where
@@ -143,18 +144,22 @@ unions = foldl' S.union S.empty
 
 -- | finds the dominators of all blocks in a CFG
 dominators :: CFG -> M.HashMap Ident (S.HashSet Ident)
-dominators cfg = go init
+dominators cfg = finalise $ go init
   where
     ls            = blocks cfg
     succs         = successors cfg
     preds         = prececessors cfg
-    verts         = tail . reverse $ postorder cfg
+    verts         = reverse $ postorder cfg
     start         = entry cfg
     init          = M.insert start (S.singleton start) $ ls <$ succs
     fn m v        = S.insert v $ intersections $ S.map (m M.!) $ preds M.! v
     upd (ch, m) v = let s = fn m v in (ch || s /= m M.! v, M.insert v s m)
-    go doms       = let (change, doms') = foldl' upd (False, doms) verts in
+    go doms       = let (change, doms') = foldl' upd (False, doms) $ tail verts in
                     if not change then doms else go doms'
+    -- for nodes unreachable from the entry
+    -- the dominator set is empty
+    unreachable   = S.difference ls $ S.fromList verts
+    finalise m    = foldl' (\m v -> M.insert v S.empty m) m unreachable
 {-# INLINABLE dominators #-}
 
 -- | find the domination tree of the CGF
