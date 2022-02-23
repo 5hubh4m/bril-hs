@@ -2,21 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Bril.Structure.CFG ( entry
-                          , blocks
-                          , instructions
-                          , successors
-                          , basicBlocks
-                          , allLabels
-                          , blockLabels
-                          , cfg
-                          , prececessors
-                          , postorder
-                          , dominators
-                          , dominationTree
-                          , dominationFrontier
-                          )
-                          where
+module Bril.Structure.CFG where
 
 import           Bril.Lang.AST
 import           Data.Bifunctor
@@ -147,8 +133,9 @@ dominators cfg = go init
     ls            = blocks cfg
     succs         = successors cfg
     preds         = prececessors cfg
-    verts         = reverse $ postorder cfg
-    init          = ls <$ succs
+    verts         = tail . reverse $ postorder cfg
+    start         = entry cfg
+    init          = M.insert start (S.singleton start) $ ls <$ succs
     fn m v        = S.insert v $ intersections $ S.map (m M.!) $ preds M.! v
     upd (ch, m) v = let s = fn m v in (ch || s /= m M.! v, M.insert v s m)
     go doms       = let (change, doms') = foldl' upd (False, doms) verts in
@@ -156,16 +143,18 @@ dominators cfg = go init
 
 -- | find the domination tree of the CGF
 dominationTree :: CFG -> Tree Ident
-dominationTree cfg = fn $ entry cfg
+dominationTree cfg = fn start
   where
-    doms'     = invert $ dominators cfg
-    succs     = successors cfg
-    fn root = Node root . (fn <$>) . S.toList $ S.intersection ds cs
+    start     = entry cfg
+    doms      = dominators cfg
+    doms'     = invert doms
+    strict  v = S.delete v $ doms  M.! v
+    strict' v = S.delete v $ doms' M.! v
+    fn r      = Node r $ fn <$> S.toList children
       where
-        ds = doms' M.! root
-        cs = succs M.! root
+        children = S.filter (\d -> (doms M.! r) == strict d) $ strict' r
 
--- | find the domination frontier
+-- | find the domination frontier of the CFG
 dominationFrontier :: CFG -> M.HashMap Ident (S.HashSet Ident)
 dominationFrontier cfg = M.mapWithKey fn doms'
   where

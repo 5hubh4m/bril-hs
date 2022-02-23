@@ -65,8 +65,9 @@ executable bril-hs-exe
 
 test-suite bril-hs-test
   type: exitcode-stdio-1.0
-  main-is: Spec.hs
+  main-is: Main.hs
   other-modules:
+      Bril.Structure.Spec
       Paths_bril_hs
   hs-source-dirs:
       test
