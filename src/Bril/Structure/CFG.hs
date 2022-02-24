@@ -45,9 +45,7 @@ basicBlocks (Function _ _ _ instrs) = finalize $ filter (not . null) $ process $
 
 -- | get the set of all labels in a function
 allLabels :: Function -> S.HashSet Ident
-allLabels (Function _ _ _ instrs) = foldl' fn S.empty instrs
-  where
-    fn set i = S.union set $ S.fromList $ labels i
+allLabels (Function _ _ _ instrs) = S.fromList $ labels =<< instrs
 {-# INLINABLE allLabels #-}
 
 -- | uniquely label each block in the list of basic blocks
@@ -92,10 +90,9 @@ graph f = foldl' fn init $ zip [0..] bs
 -- | takes in a graph of successors and returns a set of prececessors
 --   in other words, invert a graph's matrix
 invert :: (Eq a, Hashable a) => M.HashMap a (S.HashSet a) -> M.HashMap a (S.HashSet a)
-invert succ = M.foldlWithKey' fn init succ
+invert succ = M.foldlWithKey' fn (S.empty <$ succ) succ
   where
-    init    = M.fromList $ zip (M.keys succ) $ repeat S.empty
-    fn map k vs = foldl' (flip $ M.adjust (S.insert k)) map vs
+    fn map k vs = M.unionWith S.union map $ S.singleton k <$ S.toMap vs
 {-# SPECIALIZE invert :: M.HashMap Ident (S.HashSet Ident) -> M.HashMap Ident (S.HashSet Ident) #-}
 {-# INLINEABLE invert #-}
 
@@ -131,15 +128,15 @@ postorder cfg = snd . fn S.empty $ entry cfg
 -- | find the intersection of all the sets in the given container
 intersections :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
 intersections x = if null x then S.empty else foldl1 S.intersection x
-{-# SPECIALIZE intersections :: [S.HashSet Ident] -> S.HashSet Ident #-}
 {-# SPECIALIZE intersections :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
+{-# SPECIALIZE intersections :: [S.HashSet Ident] -> S.HashSet Ident #-}
 {-# INLINABLE intersections #-}
 
 -- | find the union of all the sets in the given container
 unions :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
 unions = foldl' S.union S.empty
-{-# SPECIALIZE unions :: [S.HashSet Ident] -> S.HashSet Ident #-}
 {-# SPECIALIZE unions :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
+{-# SPECIALIZE unions :: [S.HashSet Ident] -> S.HashSet Ident #-}
 {-# INLINABLE unions #-}
 
 -- | finds the dominators of all blocks in a CFG
