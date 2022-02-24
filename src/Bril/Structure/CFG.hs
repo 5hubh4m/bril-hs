@@ -148,9 +148,13 @@ dominators cfg = finalise $ go init
     preds         = prececessors cfg
     verts         = reverse $ postorder cfg
     start         = entry cfg
+    -- entry has itself, and others have everyone as their dominator
     init          = M.insert start (S.singleton start) $ ls <$ succs
+    -- dominators of a node are the node and the
+    -- intersection of the dominators of it's predecessors
     fn m v        = S.insert v $ intersections $ S.map (m M.!) $ preds M.! v
     upd (ch, m) v = let s = fn m v in (ch || s /= m M.! v, M.insert v s m)
+    -- iteratively update dominators until they are changing
     go doms       = let (change, doms') = foldl' upd (False, doms) $ tail verts in
                     if not change then doms else go doms'
     -- for nodes unreachable from the entry
@@ -164,13 +168,20 @@ dominationTree :: CFG -> Tree Ident
 dominationTree cfg = fn start
   where
     start     = entry cfg
+    -- doms is your dominators, doms'
+    -- is whom you dominate
     doms      = dominators cfg
     doms'     = invert doms
     strict  v = S.delete v $ doms  M.! v
     strict' v = S.delete v $ doms' M.! v
+    -- r is the immediate dominator of v if the strict
+    -- dominators of v are the dominators of r
+    idom  r v = doms M.! r == strict v
     fn r      = Node r $ fn <$> S.toList children
       where
-        children = S.filter ((==) (doms M.! r) . strict) $ strict' r
+        -- your children in the domination tree are
+        -- those for which you are an immediate dom
+        children = S.filter (idom r) $ strict' r
 {-# INLINABLE dominationTree #-}
 
 -- | find the domination frontier of the CFG
@@ -179,5 +190,7 @@ dominationFrontier cfg = M.mapWithKey fn doms'
   where
     succs  = successors cfg
     doms'  = invert $ dominators cfg
+    -- your frontier is the set of successors of
+    -- your dominatees whom you do not strictly dominate
     fn v s = S.difference (unions $ S.map (succs M.!) s) (S.delete v s)
 {-# INLINABLE dominationFrontier #-}
