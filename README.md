@@ -42,7 +42,7 @@ support for the following utilities:
 
 * `front`: Outputs the domination frontier of each function.
 
-  `dominationTree :: CFG -> HashMap Ident (HashSet Ident)`
+  `dominationFrontier :: CFG -> HashMap Ident (HashSet Ident)`
 
 To use the utilities, build and run with the appropriate argument
 
