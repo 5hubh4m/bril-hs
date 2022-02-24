@@ -156,7 +156,7 @@ dominators cfg = finalise $ go init
     -- for nodes unreachable from the entry
     -- the dominator set is empty
     unreachable   = S.difference ls $ S.fromList verts
-    finalise m    = foldl' (\m v -> M.insert v S.empty m) m unreachable
+    finalise      = M.union (S.empty <$ S.toMap unreachable)
 {-# INLINABLE dominators #-}
 
 -- | find the domination tree of the CGF
@@ -170,7 +170,7 @@ dominationTree cfg = fn start
     strict' v = S.delete v $ doms' M.! v
     fn r      = Node r $ fn <$> S.toList children
       where
-        children = S.filter (\d -> (doms M.! r) == strict d) $ strict' r
+        children = S.filter ((==) (doms M.! r) . strict) $ strict' r
 {-# INLINABLE dominationTree #-}
 
 -- | find the domination frontier of the CFG
