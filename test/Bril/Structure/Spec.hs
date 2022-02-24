@@ -9,7 +9,6 @@ import           Data.Foldable
 import           Data.Hashable
 import           Data.Tree
 import           Test.QuickCheck
-import           Test.QuickCheck.Instances
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet        as S
 import qualified Data.Text           as T
@@ -77,11 +76,9 @@ prop_dominatorsDefn cfg = and . M.mapWithKey (\v ds -> ds == doms v) $ dominator
   where
     start   = entry cfg
     succs   = successors cfg
-    -- this find the dominators of a given node by
-    -- taking the intersection of all the common nodes
-    -- in all acyclic paths from the entry to that node
-    -- with the additional criteria that each node
-    -- dominates itself by default
+    -- this find the dominators of a given block by
+    -- taking the intersection of all the common blockss
+    -- in all acyclic paths from the entry to that block
     doms v  = intersections . S.map S.fromList $ paths succs v start
 {-# INLINABLE prop_dominatorsDefn #-}
 
@@ -92,7 +89,7 @@ prop_dominationTreeDefn :: CFG -> Bool
 prop_dominationTreeDefn cfg = snd . prop $ dominationTree cfg
   where
     doms             = invert $ dominators cfg
-    -- this finds the recursive children of the given node
+    -- this finds the recursive children of the given block
     -- of the tree along with keeping track of whether
     -- the tree property is true
     prop (Node r ts) = (ds, doms M.! r == ds && and bs)
@@ -115,7 +112,7 @@ prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
     -- of v is not strictly dominated by v
     prop  v fs = null . S.intersection fs $ strict v
     -- this property says that domination frontier
-    -- of v is one edge away from nodes v dominates
+    -- of v is one edge away from blocks v dominates
     prop' v    = not . any (null . S.intersection (doms M.! v) . (preds M.!))
     -- conbine both the properties together
     props v fs = prop v fs && prop v fs

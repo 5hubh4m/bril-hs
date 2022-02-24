@@ -18,10 +18,10 @@ import qualified Data.Text           as T
 -- | a CFG is a map from block identifiers to
 --   it's block, successors, and prececessors
 data CFG = CFG
-         { entry        :: Ident
-         , blocks       :: S.HashSet Ident
-         , instructions :: M.HashMap Ident [Instruction]
-         , successors   :: M.HashMap Ident (S.HashSet Ident)
+         { entry      :: Ident
+         , blocks     :: S.HashSet Ident
+         , instrs     :: M.HashMap Ident [Instruction]
+         , successors :: M.HashMap Ident (S.HashSet Ident)
          }
          deriving (Show, Eq, Generic, Hashable)
 
@@ -65,8 +65,8 @@ blockLabels f = fn $ basicBlocks f
                    _       -> findUnique $ length blocks
 {-# INLINABLE blockLabels #-}
 
--- | takes in a association list of blocks and their labels
---   and returns a map from a block label to it's successors
+-- | takes in a function and returns a map from
+--   a block label to it's successors
 graph :: Function -> M.HashMap Ident (S.HashSet Ident)
 graph f = foldl' fn init $ zip [0..] bs
   where
@@ -87,8 +87,8 @@ graph f = foldl' fn init $ zip [0..] bs
                  _                     -> S.empty
 {-# INLINABLE graph #-}
 
--- | takes in a graph of successors and returns a set of prececessors
---   in other words, invert a graph's matrix
+-- | takes in a graph of successors and returns a set
+--   of prececessors in other words, invert a graph's matrix
 invert :: (Eq a, Hashable a) => M.HashMap a (S.HashSet a) -> M.HashMap a (S.HashSet a)
 invert succ = M.foldlWithKey' fn (S.empty <$ succ) succ
   where
@@ -109,8 +109,8 @@ prececessors :: CFG -> M.HashMap Ident (S.HashSet Ident)
 prececessors = invert . successors
 {-# INLINABLE prececessors #-}
 
--- | create a list of CFG nodes in post-order traversal
---   starting from the root node
+-- | create a list of CFG blocks in post-order traversal
+--   starting from the entry block
 postorder :: CFG -> [Ident]
 postorder cfg = snd . fn S.empty $ entry cfg
   where
@@ -150,14 +150,15 @@ dominators cfg = finalise $ go init
     start         = entry cfg
     -- entry has itself, and others have everyone as their dominator
     init          = M.insert start (S.singleton start) $ ls <$ succs
-    -- dominators of a node are the node and the
+    -- dominators of a block are the block and the
     -- intersection of the dominators of it's predecessors
     fn m v        = S.insert v $ intersections $ S.map (m M.!) $ preds M.! v
     upd (ch, m) v = let s = fn m v in (ch || s /= m M.! v, M.insert v s m)
-    -- iteratively update dominators until they are changing
+    -- iteratively update dominators for all blocks
+    -- except entry until they are changing
     go doms       = let (change, doms') = foldl' upd (False, doms) $ tail verts in
                     if not change then doms else go doms'
-    -- for nodes unreachable from the entry
+    -- for blocks unreachable from the entry
     -- the dominator set is empty
     unreachable   = S.difference ls $ S.fromList verts
     finalise      = M.union (S.empty <$ S.toMap unreachable)

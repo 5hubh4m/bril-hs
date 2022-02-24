@@ -134,7 +134,7 @@ instance FromJSON Bril.Instruction where
               "or"     | length as >= 2                  -> return $ Bril.Value (Bril.BinOp Bril.Or first second) assgn
               "not"    | not $ null as                   -> return $ Bril.Value (Bril.UnOp Bril.Not first) assgn
               "phi"    | length as == length ls          -> return $ Bril.Value (Bril.Phi $ zip as ls) assgn
-              _                                         -> fail $ "parsing instruction failed for op " ++ show op
+              _                                          -> fail $ "parsing instruction failed for op " ++ show op
 
 -- | convert an instruction to a JSON
 instance ToJSON Bril.Instruction where

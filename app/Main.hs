@@ -50,4 +50,4 @@ main = do args <- getArgs
           bytes <- B.getContents
           case eitherDecode bytes of
             Left e             -> putStrLn e
-            Right (Program fs) -> mapM_ (\x -> printName x *>  f x) fs
+            Right (Program fs) -> mapM_ (\x -> printName x *> f x) fs

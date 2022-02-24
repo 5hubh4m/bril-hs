@@ -18,7 +18,7 @@ newtype Ident = Ident
 
 -- | define a show instance for identifiers
 instance Show Ident where
-  show (Ident i) = show i
+  show (Ident i) = T.unpack i
 
 -- | a literal is either an integer or a float or a boolean
 data Literal = Bool Bool
