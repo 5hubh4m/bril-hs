@@ -111,6 +111,7 @@ data Instruction = Label Ident
 
 -- | given an instruction return it's list of arguments
 args :: Instruction -> [Ident]
+args (Effect (Br x _ _))     = [x]
 args (Effect (Free x))       = [x]
 args (Effect (Guard x _))    = [x]
 args (Effect (Print x))      = [x]
@@ -118,6 +119,7 @@ args (Effect (Ret (Just x))) = [x]
 args (Effect (Store x y))    = [x, y]
 args (Value (Alloc x) _)     = [x]
 args (Value (BinOp _ x y) _) = [x, y]
+args (Value (Call _ xs) _)   = xs
 args (Value (Id x) _)        = [x]
 args (Value (Load x) _)      = [x]
 args (Value (Phi xs) _)      = fst <$> xs
@@ -150,21 +152,27 @@ assignment _           = Nothing
 
 -- | change the arguments of an instruction by
 --   applying the given function
-mapArgs :: Instruction -> (Ident -> Ident) -> Instruction
-mapArgs (Effect (Br cond tl fl)) f = Effect $ Br (f cond) tl fl
-mapArgs (Effect (Free x)) f        = Effect $ Free (f x)
-mapArgs (Effect (Guard x l)) f     = Effect $ Guard (f x) l
-mapArgs (Effect (Print x)) f       = Effect $ Print (f x)
-mapArgs (Effect (Ret x)) f         = Effect $ Ret (f <$> x)
-mapArgs (Effect (Store x y)) f     = Effect $ Store (f x) (f y)
-mapArgs (Value (Alloc x) a) f      = Value (Alloc (f x)) a
-mapArgs (Value (BinOp o x y) a) f  = Value (BinOp o (f x) (f y)) a
-mapArgs (Value (Call fn as) a) f   = Value (Call fn (f <$> as)) a
-mapArgs (Value (Id x) a) f         = Value (Id (f x)) a
-mapArgs (Value (Load y) a) f       = Value (Load (f y)) a
-mapArgs (Value (UnOp o x) a) f     = Value (UnOp o (f x)) a
-mapArgs (Value (Phi xs) a) f       = Value (Phi $ first f <$> xs) a
-mapArgs x _                        = x
+mapArgs :: (Ident -> Ident) -> Instruction -> Instruction
+mapArgs f (Effect (Br cond tl fl)) = Effect $ Br (f cond) tl fl
+mapArgs f (Effect (Free x))        = Effect $ Free (f x)
+mapArgs f (Effect (Guard x l))     = Effect $ Guard (f x) l
+mapArgs f (Effect (Print x))       = Effect $ Print (f x)
+mapArgs f (Effect (Ret x))         = Effect $ Ret (f <$> x)
+mapArgs f (Effect (Store x y))     = Effect $ Store (f x) (f y)
+mapArgs f (Value (Alloc x) a)      = Value (Alloc (f x)) a
+mapArgs f (Value (BinOp o x y) a)  = Value (BinOp o (f x) (f y)) a
+mapArgs f (Value (Call fn as) a)   = Value (Call fn (f <$> as)) a
+mapArgs f (Value (Id x) a)         = Value (Id (f x)) a
+mapArgs f (Value (Load y) a)       = Value (Load (f y)) a
+mapArgs f (Value (UnOp o x) a)     = Value (UnOp o (f x)) a
+mapArgs f (Value (Phi xs) a)       = Value (Phi $ first f <$> xs) a
+mapArgs _ x                        = x
+
+-- | change the destination of an instruction by
+--   applying the given function
+mapDest :: (Ident -> Ident) -> Instruction -> Instruction
+mapDest f (Value x (Just (Assignment d t))) = Value x . Just $ Assignment (f d) t
+mapDest _ x                                 = x
 
 -- | defines an operation to extract an op object
 --   from an instruction
@@ -219,3 +227,25 @@ instance InstrOp EffectInstruction where
   op Ret {}    = Ident "ret"
   op Speculate = Ident "speculate"
   op Store {}  = Ident "store"
+
+-- | defines an operation to extract whether the instruction has a side effect
+class EffectOp a where
+  effect :: a -> Bool
+
+-- | define an instance of EffectOp for effect instructions
+instance EffectOp EffectInstruction where
+  effect Nop = False
+  effect _   = True
+
+-- | define an instance of EffectOp for value instructions
+instance EffectOp ValueInstruction where
+  effect Call {}  = True
+  effect Alloc {} = True
+  effect _        = False
+
+-- | whether a given instruction is a terminating instruction
+terminator :: Instruction -> Bool
+terminator (Effect Jmp {})  = True
+terminator (Effect Ret {})  = True
+terminator (Effect Br {})   = True
+terminator _                = False

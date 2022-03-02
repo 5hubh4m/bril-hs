@@ -27,6 +27,9 @@ library
       Bril.Lang.AST
       Bril.Lang.Parse
       Bril.Structure.CFG
+      Bril.Structure.SSA
+      Util.Graph
+      Util.Misc
   other-modules:
       Paths_bril_hs
   hs-source-dirs:
@@ -45,8 +48,6 @@ library
 
 executable bril-hs-exe
   main-is: Main.hs
-  other-modules:
-      Paths_bril_hs
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2
@@ -70,7 +71,7 @@ test-suite bril-hs-test
       Bril.Structure.Spec
       Paths_bril_hs
   hs-source-dirs:
-      test
+      spec
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2
   build-depends:
       QuickCheck

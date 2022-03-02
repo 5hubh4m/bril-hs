@@ -36,11 +36,14 @@ executables:
     - -O2
     dependencies:
     - bril-hs
+    when:
+    - condition: false
+      other-modules: Paths_bril_hs
 
 tests:
   bril-hs-test:
     main:        Main.hs
-    source-dirs: test
+    source-dirs: spec
     ghc-options:
     - -threaded
     - -rtsopts

@@ -1,0 +1,30 @@
+extract = 'total_dyn_inst: (\d+)'
+benchmarks = './*.bril'
+timeout = 10
+
+[runs.baseline]
+pipeline = [
+    "bril2json",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "brili -p {args}",
+]
+
+[runs.ssa]
+pipeline = [
+    "bril2json",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "stack run to",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "brili -p {args}",
+]
+
+[runs.roundtrip]
+pipeline = [
+    "bril2json",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "stack run to",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "stack run from",
+    "../../../../bril-processing/scripts/run bril.run.BrilDce",
+    "brili -p {args}",
+]

@@ -1,16 +1,15 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Bril.Structure.CFG where
 
 import           Bril.Lang.AST
 import           Data.Bifunctor
+import           Data.Foldable
 import           Data.Hashable
-import           Data.List
 import           Data.Maybe
 import           Data.Tree
-import           GHC.Generics
+import           Util.Graph
+import           Util.Misc
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet        as S
 import qualified Data.Text           as T
@@ -18,12 +17,12 @@ import qualified Data.Text           as T
 -- | a CFG is a map from block identifiers to
 --   it's block, successors, and prececessors
 data CFG = CFG
-         { entry      :: Ident
-         , blocks     :: S.HashSet Ident
-         , instrs     :: M.HashMap Ident [Instruction]
-         , successors :: M.HashMap Ident (S.HashSet Ident)
+         { entry        :: Ident
+         , blocks       :: [Ident]
+         , successors   :: Graph Ident
+         , instructions :: M.HashMap Ident [Instruction]
          }
-         deriving (Show, Eq, Generic, Hashable)
+         deriving (Show, Eq)
 
 -- | get all the basic blocks from a function and if it
 --   has no instructions then return at least an empty
@@ -33,10 +32,6 @@ basicBlocks (Function _ _ _ instrs) = finalize $ filter (not . null) $ process $
   where
     finalize l                  = if null l then [[]] else l
     process (blocks, curr)      = blocks ++ [curr]
-    terminator (Effect Jmp {})  = True
-    terminator (Effect Ret {})  = True
-    terminator (Effect Br {})   = True
-    terminator _                = False
     fn (blocks, curr) (Label l) = (blocks ++ [curr], [Label l])
     fn (blocks, curr) instr
       | terminator instr = (blocks ++ [curr ++ [instr]], [])
@@ -48,21 +43,27 @@ allLabels :: Function -> S.HashSet Ident
 allLabels (Function _ _ _ instrs) = S.fromList $ labels =<< instrs
 {-# INLINABLE allLabels #-}
 
+-- | create a fresh label not present in the given ones
+freshLabel :: S.HashSet Ident -> Ident
+freshLabel ls = findUnique 0
+  where
+    findUnique idx
+      | S.member (create idx) ls = findUnique $ idx + 1
+      | otherwise                = create idx
+    create = Ident . T.pack . ("b" ++) . show
+
 -- | uniquely label each block in the list of basic blocks
 blockLabels :: Function -> [(Ident, [Instruction])]
-blockLabels f = fn $ basicBlocks f
+blockLabels f = snd $ fn (labels, basicBlocks f)
   where
-    labels              = allLabels f
-    fn []               = []
-    fn (block : blocks) = (label, block) : fn blocks
+    labels                  = allLabels f
+    fn (ls, [])             = (ls, [])
+    fn (ls, block : blocks) = second ((l, is) :) $ fn (S.insert l ls, blocks)
       where
-        findUnique idx
-          | S.member (create idx) labels = findUnique $ idx + 1
-          | otherwise                    = create idx
-        create = Ident . T.pack . ("b" ++) . show
-        label  = case head block of
-                   Label l -> l
-                   _       -> findUnique $ length blocks
+        new     = freshLabel ls
+        (l, is) = case listToMaybe block of
+                    Just (Label l) -> (l, block)
+                    _              -> (new, Label new : block)
 {-# INLINABLE blockLabels #-}
 
 -- | takes in a function and returns a map from
@@ -87,69 +88,30 @@ graph f = foldl' fn init $ zip [0..] bs
                  _                     -> S.empty
 {-# INLINABLE graph #-}
 
--- | takes in a graph of successors and returns a set
---   of prececessors in other words, invert a graph's matrix
-invert :: (Eq a, Hashable a) => M.HashMap a (S.HashSet a) -> M.HashMap a (S.HashSet a)
-invert succ = M.foldlWithKey' fn (S.empty <$ succ) succ
-  where
-    fn map k vs = M.unionWith S.union map $ S.singleton k <$ S.toMap vs
-{-# SPECIALIZE invert :: M.HashMap Ident (S.HashSet Ident) -> M.HashMap Ident (S.HashSet Ident) #-}
-{-# INLINEABLE invert #-}
-
 -- | create the CFG of a function
 cfg :: Function -> CFG
-cfg f = CFG (fst $ head ls) ll (M.fromList ls) (graph f)
+cfg f = CFG (fst $ head ls) (fst <$> ls) (Graph ll $ graph f) $ M.fromList ls
   where
     ll = allLabels f
     ls = blockLabels f
 {-# INLINABLE cfg #-}
 
 -- | get the prececcssor graph in a CFG
-prececessors :: CFG -> M.HashMap Ident (S.HashSet Ident)
+prececessors :: CFG -> Graph Ident
 prececessors = invert . successors
 {-# INLINABLE prececessors #-}
-
--- | create a list of CFG blocks in post-order traversal
---   starting from the entry block
-postorder :: CFG -> [Ident]
-postorder cfg = snd . fn S.empty $ entry cfg
-  where
-    succs        = successors cfg
-    preds        = prececessors cfg
-    fn seen root = if S.member root seen then (seen, [])
-                   else second (++ [root]) $ foldl' upd (seen', []) next
-      where
-        children     = succs M.! root
-        next         = S.toList $ S.difference children seen
-        seen'        = S.insert root seen
-        upd (s, l) n = second (l ++) $ fn s n
-{-# INLINABLE postorder #-}
-
--- | find the intersection of all the sets in the given container
-intersections :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
-intersections x = if null x then S.empty else foldl1 S.intersection x
-{-# SPECIALIZE intersections :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
-{-# SPECIALIZE intersections :: [S.HashSet Ident] -> S.HashSet Ident #-}
-{-# INLINABLE intersections #-}
-
--- | find the union of all the sets in the given container
-unions :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
-unions = foldl' S.union S.empty
-{-# SPECIALIZE unions :: S.HashSet (S.HashSet Ident) -> S.HashSet Ident #-}
-{-# SPECIALIZE unions :: [S.HashSet Ident] -> S.HashSet Ident #-}
-{-# INLINABLE unions #-}
 
 -- | finds the dominators of all blocks in a CFG
 dominators :: CFG -> M.HashMap Ident (S.HashSet Ident)
 dominators cfg = finalise $ go init
   where
-    ls            = blocks cfg
-    succs         = successors cfg
-    preds         = prececessors cfg
-    verts         = reverse $ postorder cfg
     start         = entry cfg
+    succs         = edges $ successors cfg
+    preds         = edges $ prececessors cfg
+    blocks        = vertices $ successors cfg
+    verts         = reverse $ postorder (successors cfg) start
     -- entry has itself, and others have everyone as their dominator
-    init          = M.insert start (S.singleton start) $ ls <$ succs
+    init          = M.insert start (S.singleton start) $ blocks <$ succs
     -- dominators of a block are the block and the
     -- intersection of the dominators of it's predecessors
     fn m v        = S.insert v $ intersections $ S.map (m M.!) $ preds M.! v
@@ -160,7 +122,7 @@ dominators cfg = finalise $ go init
                     if not change then doms else go doms'
     -- for blocks unreachable from the entry
     -- the dominator set is empty
-    unreachable   = S.difference ls $ S.fromList verts
+    unreachable   = S.difference blocks $ S.fromList verts
     finalise      = M.union (S.empty <$ S.toMap unreachable)
 {-# INLINABLE dominators #-}
 
@@ -172,7 +134,7 @@ dominationTree cfg = fn start
     -- doms is your dominators, doms'
     -- is whom you dominate
     doms      = dominators cfg
-    doms'     = invert doms
+    doms'     = transpose doms
     strict  v = S.delete v $ doms  M.! v
     strict' v = S.delete v $ doms' M.! v
     -- r is the immediate dominator of v if the strict
@@ -189,8 +151,8 @@ dominationTree cfg = fn start
 dominationFrontier :: CFG -> M.HashMap Ident (S.HashSet Ident)
 dominationFrontier cfg = M.mapWithKey fn doms'
   where
-    succs  = successors cfg
-    doms'  = invert $ dominators cfg
+    succs  = edges $ successors cfg
+    doms'  = transpose $ dominators cfg
     -- your frontier is the set of successors of
     -- your dominatees whom you do not strictly dominate
     fn v s = S.difference (unions $ S.map (succs M.!) s) (S.delete v s)

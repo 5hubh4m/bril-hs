@@ -145,8 +145,8 @@ instance ToJSON Bril.Instruction where
       labels = let ls = Bril.labels instr in ["labels" .= ls | not $ null ls]
       funcs  = let fs = Bril.funcs instr in ["funcs" .= fs | not $ null fs]
       value  = concat . maybeToList $ (\v -> ["value" .= v]) <$> Bril.literal instr
-      assgn  = concat . maybeToList $ (\(Bril.Assignment d t) -> ["dest" .= t, "type" .= t]) <$> Bril.assignment instr
+      assgn  = concat . maybeToList $ (\(Bril.Assignment d t) -> ["dest" .= d, "type" .= t]) <$> Bril.assignment instr
       op     = case instr of
                  Bril.Effect i  -> Bril.op i
                  Bril.Value i _ -> Bril.op i
-                 _              -> error "should never reach here"
+                 _              -> undefined
