@@ -124,24 +124,24 @@ rename :: MultiMap Ident Ident                                                  
 rename succs instrs phis stack (Node b cs) = fin $ foldl' rec (instrs', phis'', stack'') cs
   where
     -- update the stack with phi nodes in this block
-    fn (s, ps) p = second (`S.insert` ps) $ renamePhi s p
-    (stack', ps) = foldl' fn (stack, S.empty) $ phis M.! b
+    fn (s, ps) p    = second (`S.insert` ps) $ renamePhi s p
+    (stack', ps)    = foldl' fn (stack, S.empty) $ phis M.! b
     -- update the stack with the instrs in this block
-    gn (s, is) i = second ((is ++) . (: [])) $ renameInstr s i
-    (stack'', is) = foldl' gn (stack', []) $ instrs M.! b
+    gn (s, is) i    = second ((is ++) . (: [])) $ renameInstr s i
+    (stack'', is)   = foldl' gn (stack', []) $ instrs M.! b
     -- update the instrs and phi nodes for the current block
-    instrs' = M.insert b is instrs
-    phis' = M.insert b ps phis
+    instrs'         = M.insert b is instrs
+    phis'           = M.insert b ps phis
     -- update the phi nodes in this block's successors
     hn (PhiNode v u xs)
       | declared $ stack'' M.! v = PhiNode v u ((curr $ stack'' M.! v, b) : xs)
       | otherwise                = PhiNode v u xs
-    phis'' = foldl' (flip (M.adjust $ S.map hn)) phis' $ succs M.! b
+    phis''          = foldl' (flip (M.adjust $ S.map hn)) phis' $ succs M.! b
     -- recurse on the children nodes
     rec (i, p, s) n = rename succs i p s n
     -- return the original stack with updated counter
-    pop s = (stack M.! variable s) { counter = counter s }
-    fin (i, p, s) = (i, p, pop <$> s)
+    pop s           = (stack M.! variable s) { counter = counter s }
+    fin (i, p, s)   = (i, p, pop <$> s)
 
 -- | combine the phi nodes with the instruction blocks
 combinePhi :: M.HashMap Ident Type -> M.HashMap Ident [Instruction] -> MultiMap Ident PhiNode -> M.HashMap Ident [Instruction]
@@ -189,8 +189,7 @@ ssa fn = Function n a t ilist
     fn'          = Function n a t $ ablock ++ x
     ls           = allLabels fn
     ablock       = [Label $ freshLabel ls | not $ null a] ++ (arg <$> a)
-    arg a        = let (d, t) = case a of Argument d t -> (d, t)
-                   in Value (Id d) (Just (Assignment d t))
+    arg a        = case a of Argument d t -> Value (Id d) (Just (Assignment d t))
     -- create the CFG and frontier
     gh           = cfg fn'
     front        = dominationFrontier gh
@@ -232,11 +231,10 @@ removePhi instrs = foldl' fn instrs' ps
 
 -- | convert the given function out of SSA form
 ssa' :: Function -> Function
-ssa' fn = Function n a t ilist
+ssa' fn = case fn of Function n a t _ -> Function n a t ilist
   where
-    gh      = cfg fn
-    instrs  = instructions gh
+    gh        = cfg fn
+    instrs    = instructions gh
     -- remove the phi nodes
-    instrs' = removePhi instrs
-    ilist   = (instrs' M.!) =<< blocks gh
-    (n, a, t) = case fn of Function n a t _ -> (n, a, t)
+    instrs'   = removePhi instrs
+    ilist     = (instrs' M.!) =<< blocks gh
