@@ -19,27 +19,29 @@ representation to/from JSON.
 ### Bril.Structure
 
 The module [`Bril.Structure.CFG`](src/Bril/Structure/CFG.hs)
-which contains utilities for converting a Bril program into basic blocks and CFG
+contains utilities for converting a Bril program into basic blocks and CFG
 and performing operations on them like finding dominators of each basic
 block etc.
 
 The module [`Bril.Structure.SSA`](src/Bril/Structure/SSA.hs)
-which exports a function `ssa` for converting a Bril program into SSA form
+exports a function `ssa` for converting a Bril program into SSA form
 by adding `phi` instruction and renaming variables and the function `ssa'`
 which removes all the `phi` instructions and replaces with variable copies.
+
+The module [`Bril.Structure.Loop`](src/Bril/Structure/Loop.hs)
+exports functions to extract all the natural loops in a Bril program.
 
 ## Building and Using
 
 The package is built using [`stack`](https://docs.haskellstack.org/en/stable/README/)
 which can be installed using `brew install haskell-stack` on macOS.
 
-Currently the [`Main.hs`](app/Main.hs) file implements SSA conversion. It takes in
-a JSON Bril program and outputs a converted. You can convert `to` or `from` SSA by
-supplying the relevant argument to the program. 
+Currently the [`Main.hs`](app/Main.hs) file implements dominator utilities and SSA conversion.
+It takes in a JSON Bril program and outputs the result.
 
 ```
 $> stack build
-$> bril2json < path/to/bril/program | stack run [to | from]
+$> bril2json < path/to/bril/program | stack run [doms | front | tree | ssa | ssa']
 ```
 
 ## Testing
