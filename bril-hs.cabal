@@ -27,6 +27,7 @@ library
       Bril.Lang.AST
       Bril.Lang.Parse
       Bril.Structure.CFG
+      Bril.Structure.Loop
       Bril.Structure.SSA
       Util.Graph
       Util.Misc
@@ -40,6 +41,7 @@ library
     , bytestring
     , containers
     , hashable
+    , lens
     , scientific
     , text
     , unordered-containers
@@ -58,6 +60,7 @@ executable bril-hs-exe
     , bytestring
     , containers
     , hashable
+    , lens
     , scientific
     , text
     , unordered-containers
@@ -81,6 +84,7 @@ test-suite bril-hs-test
     , bytestring
     , containers
     , hashable
+    , lens
     , quickcheck-instances
     , scientific
     , text

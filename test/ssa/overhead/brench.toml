@@ -13,7 +13,7 @@ pipeline = [
 pipeline = [
     "bril2json",
     "../../../../bril-processing/scripts/run bril.run.BrilDce",
-    "stack run to",
+    "stack run ssa",
     "../../../../bril-processing/scripts/run bril.run.BrilDce",
     "brili -p {args}",
 ]
@@ -22,9 +22,9 @@ pipeline = [
 pipeline = [
     "bril2json",
     "../../../../bril-processing/scripts/run bril.run.BrilDce",
-    "stack run to",
+    "stack run ssa",
     "../../../../bril-processing/scripts/run bril.run.BrilDce",
-    "stack run from",
+    "stack run ssa'",
     "../../../../bril-processing/scripts/run bril.run.BrilDce",
     "brili -p {args}",
 ]

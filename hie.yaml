@@ -6,8 +6,5 @@ cradle:
     - path: "./app/Main.hs"
       component: "bril-hs:exe:bril-hs-exe"
 
-    - path: "./app/Paths_bril_hs.hs"
-      component: "bril-hs:exe:bril-hs-exe"
-
-    - path: "./test"
+    - path: "./spec"
       component: "bril-hs:test:bril-hs-test"

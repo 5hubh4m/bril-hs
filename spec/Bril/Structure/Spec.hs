@@ -4,7 +4,7 @@ module Bril.Structure.Spec where
 
 import           Bril.Lang.AST
 import           Bril.Structure.CFG
-import           Data.Bifunctor
+import           Control.Lens
 import           Data.Foldable
 import           Data.Hashable
 import           Data.Tree
@@ -27,7 +27,7 @@ instance Arbitrary Ident where
 instance Arbitrary CFG where
   arbitrary = do blocks <- suchThat (distinct <$> orderedList) (not . null)
                  graph  <- M.fromList <$> mapM (edges blocks) blocks
-                 return $ CFG (head blocks) (Graph (S.fromList blocks) graph) M.empty
+                 return $ CFG (head blocks) blocks (Graph (S.fromList blocks) graph) M.empty
     where
       -- takes the list of blocks and shuffles it and
       -- chooses at most 2 blocks as successors
@@ -41,8 +41,8 @@ instance Arbitrary CFG where
 prop_dominatorsDefn :: CFG -> Bool
 prop_dominatorsDefn cfg = and . M.mapWithKey (\v ds -> ds == doms v) $ dominators cfg
   where
-    start   = entry cfg
-    succs   = successors cfg
+    start   = cfg ^. entry
+    succs   = cfg ^. successors
     -- this find the dominators of a given block by
     -- taking the intersection of all the common blockss
     -- in all acyclic paths from the entry to that block
@@ -73,7 +73,7 @@ prop_dominationFrontierDefn cfg = and $ M.mapWithKey props front
   where
     doms       = transpose $ dominators cfg
     front      = dominationFrontier cfg
-    preds      = edges $ prececessors cfg
+    preds      = cfg ^. predecessors . edges
     strict v   = S.delete v $ doms M.! v
     -- this property says that domination frontier
     -- of v is not strictly dominated by v

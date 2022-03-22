@@ -106,7 +106,7 @@ instance FromJSON Bril.Instruction where
               "store"  | length as >= 2                  -> return . Bril.Effect $ Bril.Store first second
               "free"   | not $ null as                   -> return . Bril.Effect $ Bril.Free first
               "guard"  | not (null as) && not (null ls)  -> return . Bril.Effect $ Bril.Guard first true
-              "const"  | isJust vl                       -> return $ Bril.Value (Bril.Const $ fromJust vl) assgn
+              "const"  | isJust vl                       -> return $ Bril.Value (Bril.Constant $ fromJust vl) assgn
               "id"     | not $ null as                   -> return $ Bril.Value (Bril.Id first) assgn
               "alloc"  | not $ null as                   -> return $ Bril.Value (Bril.Alloc first) assgn
               "load"   | not $ null as                   -> return $ Bril.Value (Bril.Load first) assgn
@@ -147,6 +147,6 @@ instance ToJSON Bril.Instruction where
       value  = concat . maybeToList $ (\v -> ["value" .= v]) <$> Bril.literal instr
       assgn  = concat . maybeToList $ (\(Bril.Assignment d t) -> ["dest" .= d, "type" .= t]) <$> Bril.assignment instr
       op     = case instr of
-                 Bril.Effect i  -> Bril.op i
-                 Bril.Value i _ -> Bril.op i
+                 Bril.Effect i  -> Bril.opName i
+                 Bril.Value i _ -> Bril.opName i
                  _              -> undefined

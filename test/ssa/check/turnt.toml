@@ -1,1 +1,1 @@
-command = "bril2json < {filename} | stack run to | python3 ../../../../bril/examples/is_ssa.py"
+command = "bril2json < {filename} | stack run ssa | python3 ../../../../bril/examples/is_ssa.py"

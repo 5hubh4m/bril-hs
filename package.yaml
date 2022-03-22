@@ -17,6 +17,7 @@ dependencies:
 - bytestring
 - containers
 - hashable
+- lens
 - scientific
 - text
 - unordered-containers

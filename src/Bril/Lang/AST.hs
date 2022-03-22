@@ -1,10 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Bril.Lang.AST where
 
-import           Data.Bifunctor
+import           Control.Lens
 import           Data.Hashable
 import           GHC.Generics
 import           Prelude       hiding (LT, GT, EQ)
@@ -45,7 +46,12 @@ data Argument = Argument Ident Type
 -- | a function has a name, arguments, optionally
 --   a type if it returns a value and a list of
 --   instructions
-data Function = Function Ident [Argument] (Maybe Type) [Instruction]
+data Function = Function
+              { _fname   :: Ident
+              , _fargs   :: [Argument]
+              , _fret    :: Maybe Type
+              , _finstrs :: [Instruction]
+              }
               deriving (Show, Eq, Generic, Hashable)
 
 -- | defines all possible operations
@@ -83,7 +89,7 @@ data Assignment = Assignment Ident Type
 data ValueInstruction = Alloc Ident
                       | BinOp Op Ident Ident
                       | Call Ident [Ident]
-                      | Const Literal
+                      | Constant Literal
                       | Id Ident
                       | Load Ident
                       | Phi [(Ident, Ident)]
@@ -109,6 +115,9 @@ data Instruction = Label Ident
                  | Value ValueInstruction (Maybe Assignment)
                  deriving (Show, Eq, Generic, Hashable)
 
+-- | make lenses for function
+makeLenses ''Function
+
 -- | given an instruction return it's list of arguments
 args :: Instruction -> [Ident]
 args (Effect (Br x _ _))     = [x]
@@ -122,7 +131,7 @@ args (Value (BinOp _ x y) _) = [x, y]
 args (Value (Call _ xs) _)   = xs
 args (Value (Id x) _)        = [x]
 args (Value (Load x) _)      = [x]
-args (Value (Phi xs) _)      = fst <$> xs
+args (Value (Phi xs) _)      = (^. _1) <$> xs
 args (Value (UnOp _ x) _)    = [x]
 args _                       = []
 
@@ -132,7 +141,7 @@ labels (Label x)            = [x]
 labels (Effect (Br _ x y))  = [x, y]
 labels (Effect (Guard _ x)) = [x]
 labels (Effect (Jmp x))     = [x]
-labels (Value (Phi xs) _)   = snd <$> xs
+labels (Value (Phi xs) _)   = (^. _2) <$> xs
 labels _                    = []
 
 -- | given an instruction return it's list of funcs
@@ -142,8 +151,8 @@ funcs _                    = []
 
 -- | given an instruction return the value it contains
 literal :: Instruction -> Maybe Literal
-literal (Value (Const v) _) = Just v
-literal _                   = Nothing
+literal (Value (Constant v) _) = Just v
+literal _                      = Nothing
 
 -- | given an instruction return it's assignment
 assignment :: Instruction -> Maybe Assignment
@@ -165,7 +174,7 @@ mapArgs f (Value (Call fn as) a)   = Value (Call fn (f <$> as)) a
 mapArgs f (Value (Id x) a)         = Value (Id (f x)) a
 mapArgs f (Value (Load y) a)       = Value (Load (f y)) a
 mapArgs f (Value (UnOp o x) a)     = Value (UnOp o (f x)) a
-mapArgs f (Value (Phi xs) a)       = Value (Phi $ first f <$> xs) a
+mapArgs f (Value (Phi xs) a)       = Value (Phi $ (_1 %~ f) <$> xs) a
 mapArgs _ x                        = x
 
 -- | change the destination of an instruction by
@@ -174,78 +183,71 @@ mapDest :: (Ident -> Ident) -> Instruction -> Instruction
 mapDest f (Value x (Just (Assignment d t))) = Value x . Just $ Assignment (f d) t
 mapDest _ x                                 = x
 
--- | defines an operation to extract an op object
+-- | defines an operation to extract an opName object
 --   from an instruction
 class InstrOp a where
-  op :: a -> Ident
+  opName :: a -> Ident
 
 -- | define an instance of InstrOp for Op values
 instance InstrOp Op where
-  op Add    = Ident "add"
-  op Mul    = Ident "mul"
-  op Sub    = Ident "sub"
-  op Div    = Ident "div"
-  op FAdd   = Ident "fadd"
-  op FMul   = Ident "fmul"
-  op FSub   = Ident "fsub"
-  op FDiv   = Ident "fdiv"
-  op LT     = Ident "lt"
-  op GT     = Ident "gt"
-  op LE     = Ident "le"
-  op GE     = Ident "ge"
-  op EQ     = Ident "eq"
-  op FLT    = Ident "flt"
-  op FGT    = Ident "fgt"
-  op FLE    = Ident "fle"
-  op FGE    = Ident "fge"
-  op FEQ    = Ident "feq"
-  op And    = Ident "and"
-  op Or     = Ident "or"
-  op Not    = Ident "not"
-  op PtrAdd = Ident "ptradd"
+  opName Add    = Ident "add"
+  opName Mul    = Ident "mul"
+  opName Sub    = Ident "sub"
+  opName Div    = Ident "div"
+  opName FAdd   = Ident "fadd"
+  opName FMul   = Ident "fmul"
+  opName FSub   = Ident "fsub"
+  opName FDiv   = Ident "fdiv"
+  opName LT     = Ident "lt"
+  opName GT     = Ident "gt"
+  opName LE     = Ident "le"
+  opName GE     = Ident "ge"
+  opName EQ     = Ident "eq"
+  opName FLT    = Ident "flt"
+  opName FGT    = Ident "fgt"
+  opName FLE    = Ident "fle"
+  opName FGE    = Ident "fge"
+  opName FEQ    = Ident "feq"
+  opName And    = Ident "and"
+  opName Or     = Ident "or"
+  opName Not    = Ident "not"
+  opName PtrAdd = Ident "ptradd"
 
 -- | define an instance of InstrOp for value instructions
 instance InstrOp ValueInstruction where
-  op (BinOp o _ _) = op o
-  op (UnOp o _)    = op o
-  op Alloc {}      = Ident "alloc"
-  op Call {}       = Ident "call"
-  op Const {}      = Ident "const"
-  op Id {}         = Ident "id"
-  op Load {}       = Ident "load"
-  op Phi {}        = Ident "phi"
+  opName (BinOp o _ _) = opName o
+  opName (UnOp o _)    = opName o
+  opName Alloc {}      = Ident "alloc"
+  opName Call {}       = Ident "call"
+  opName Constant {}   = Ident "const"
+  opName Id {}         = Ident "id"
+  opName Load {}       = Ident "load"
+  opName Phi {}        = Ident "phi"
 
 -- | define an instance of InstrOp for effect instructions
 instance InstrOp EffectInstruction where
-  op Br {}     = Ident "br"
-  op Commit    = Ident "commit"
-  op Free {}   = Ident "free"
-  op Guard {}  = Ident "guard"
-  op Jmp {}    = Ident "jmp"
-  op Nop       = Ident "nop"
-  op Print {}  = Ident "print"
-  op Ret {}    = Ident "ret"
-  op Speculate = Ident "speculate"
-  op Store {}  = Ident "store"
+  opName Br {}     = Ident "br"
+  opName Commit    = Ident "commit"
+  opName Free {}   = Ident "free"
+  opName Guard {}  = Ident "guard"
+  opName Jmp {}    = Ident "jmp"
+  opName Nop       = Ident "nop"
+  opName Print {}  = Ident "print"
+  opName Ret {}    = Ident "ret"
+  opName Speculate = Ident "speculate"
+  opName Store {}  = Ident "store"
 
 -- | defines an operation to extract whether the instruction has a side effect
-class EffectOp a where
-  effect :: a -> Bool
-
--- | define an instance of EffectOp for effect instructions
-instance EffectOp EffectInstruction where
-  effect Nop = False
-  effect _   = True
-
--- | define an instance of EffectOp for value instructions
-instance EffectOp ValueInstruction where
-  effect Call {}  = True
-  effect Alloc {} = True
-  effect _        = False
+effect :: Instruction -> Bool
+effect (Effect Nop)       = False
+effect Effect {}          = True
+effect (Value Call {} _)  = True
+effect (Value Alloc {} _) = True
+effect _                  = False
 
 -- | whether a given instruction is a terminating instruction
 terminator :: Instruction -> Bool
-terminator (Effect Jmp {})  = True
-terminator (Effect Ret {})  = True
-terminator (Effect Br {})   = True
-terminator _                = False
+terminator (Effect Jmp {}) = True
+terminator (Effect Ret {}) = True
+terminator (Effect Br {})  = True
+terminator _               = False

@@ -1,13 +1,17 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Bril.Structure.CFG where
 
 import           Bril.Lang.AST
-import           Data.Bifunctor
+import           Control.Lens
 import           Data.Foldable
 import           Data.Hashable
 import           Data.Maybe
 import           Data.Tree
+import           GHC.Generics        hiding (to)
 import           Util.Graph
 import           Util.Misc
 import qualified Data.HashMap.Strict as M
@@ -17,12 +21,15 @@ import qualified Data.Text           as T
 -- | a CFG is a map from block identifiers to
 --   it's block, successors, and prececessors
 data CFG = CFG
-         { entry        :: Ident
-         , blocks       :: [Ident]
-         , successors   :: Graph Ident
-         , instructions :: M.HashMap Ident [Instruction]
+         { _entry        :: Ident
+         , _blocks       :: [Ident]
+         , _successors   :: Graph Ident
+         , _instructions :: M.HashMap Ident [Instruction]
          }
-         deriving (Show, Eq)
+         deriving (Show, Eq, Generic, Hashable)
+
+-- | make lenses for CFG
+makeLenses ''CFG
 
 -- | get all the basic blocks from a function and if it
 --   has no instructions then return at least an empty
@@ -58,7 +65,7 @@ blockLabels f = snd $ fn (labels, basicBlocks f)
   where
     labels                  = allLabels f
     fn (ls, [])             = (ls, [])
-    fn (ls, block : blocks) = second ((l, is) :) $ fn (S.insert l ls, blocks)
+    fn (ls, block : blocks) = _2 %~ ((l, is) :) $ fn (S.insert l ls, blocks)
       where
         new     = freshLabel ls
         (l, is) = case listToMaybe block of
@@ -68,8 +75,8 @@ blockLabels f = snd $ fn (labels, basicBlocks f)
 
 -- | takes in a function and returns a map from
 --   a block label to it's successors
-graph :: Function -> M.HashMap Ident (S.HashSet Ident)
-graph f = foldl' fn init $ zip [0..] bs
+graph :: Function -> Graph Ident
+graph f = Graph ll $ foldl' fn init $ zip [0..] bs
   where
     ls   = basicBlocks f
     ll   = allLabels f
@@ -88,28 +95,29 @@ graph f = foldl' fn init $ zip [0..] bs
                  _                     -> S.empty
 {-# INLINABLE graph #-}
 
--- | create the CFG of a function
-cfg :: Function -> CFG
-cfg f = CFG (fst $ head ls) (fst <$> ls) (Graph ll $ graph f) $ M.fromList ls
+-- | create a CFG of a function
+mkCFG :: Function -> CFG
+mkCFG f = CFG (head blocks ^. _1)
+              ((^. _1) <$> blocks)
+              (graph f)
+              (M.fromList blocks)
   where
-    ll = allLabels f
-    ls = blockLabels f
-{-# INLINABLE cfg #-}
+    blocks = blockLabels f
+{-# INLINABLE mkCFG #-}
 
 -- | get the prececcssor graph in a CFG
-prececessors :: CFG -> Graph Ident
-prececessors = invert . successors
-{-# INLINABLE prececessors #-}
+predecessors = to $ invert . (^. successors)
+{-# INLINABLE predecessors #-}
 
 -- | finds the dominators of all blocks in a CFG
 dominators :: CFG -> M.HashMap Ident (S.HashSet Ident)
 dominators cfg = finalise $ go init
   where
-    start         = entry cfg
-    succs         = edges $ successors cfg
-    preds         = edges $ prececessors cfg
-    blocks        = vertices $ successors cfg
-    verts         = reverse $ postorder (successors cfg) start
+    start         = cfg ^. entry
+    succs         = cfg ^. successors . edges
+    preds         = cfg ^. predecessors . edges
+    blocks        = cfg ^. successors . vertices
+    verts         = reverse $ postorder (cfg ^. successors) start
     -- entry has itself, and others have everyone as their dominator
     init          = M.insert start (S.singleton start) $ blocks <$ succs
     -- dominators of a block are the block and the
@@ -130,7 +138,7 @@ dominators cfg = finalise $ go init
 dominationTree :: CFG -> Tree Ident
 dominationTree cfg = fn start
   where
-    start     = entry cfg
+    start     = cfg ^. entry
     -- doms is your dominators, doms'
     -- is whom you dominate
     doms      = dominators cfg
@@ -151,7 +159,7 @@ dominationTree cfg = fn start
 dominationFrontier :: CFG -> M.HashMap Ident (S.HashSet Ident)
 dominationFrontier cfg = M.mapWithKey fn doms'
   where
-    succs  = edges $ successors cfg
+    succs  = cfg ^. successors . edges
     doms'  = transpose $ dominators cfg
     -- your frontier is the set of successors of
     -- your dominatees whom you do not strictly dominate

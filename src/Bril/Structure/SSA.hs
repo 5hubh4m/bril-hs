@@ -1,14 +1,17 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Bril.Structure.SSA (ssa, ssa') where
 
 import           Bril.Lang.AST
 import           Bril.Structure.CFG
-import           Data.Bifunctor
+import           Control.Lens
 import           Data.Foldable
 import           Data.Hashable
+import           Data.Maybe
 import           Data.Tree
+import           Data.Tuple
 import           GHC.Generics
 import           Util.Graph
 import           Util.Misc
@@ -24,15 +27,18 @@ variables = M.fromList . (fn =<<)
     fn (Value _ (Just (Assignment d t))) = [(d, t)]
     fn _                                 = []
 
--- | all the phi instructions in
---   the given list of instructions
+-- | all the phi instructions in the given list of instructions
+--   as a set of the 4-tuple of destination, type, variable, label
 phis :: [Instruction] -> S.HashSet (Ident, Type, Ident, Ident)
 phis = S.fromList . (fn =<<)
   where
-    fn (Value (Phi ls) (Just (Assignment d t))) = (\(x, y) -> (d, t, x, y)) <$> ls
+    fn (Value (Phi ls) (Just (Assignment d t))) = (\(v, l) -> (d, t, v, l)) <$> ls
     fn _                                        = []
 
 -- | represents a phi node for a variable
+--   which contains the variable, the
+--   destination, and the list of variables
+--   and labels
 data PhiNode = PhiNode Ident Ident [(Ident, Ident)]
              deriving (Show, Eq, Generic, Hashable)
 
@@ -60,11 +66,14 @@ addPhi succs instrs front = M.union result $ S.empty <$ instrs
 --   which is incremented whenever a new variable name
 --   is generates
 data VarStack = VarStack
-              { variable :: Ident
-              , stack    :: [Ident]
-              , counter  :: Int
+              { _variable :: Ident
+              , _stack    :: [Ident]
+              , _counter  :: Int
               }
               deriving (Show, Eq)
+
+-- | make lenses for the stack
+makeLenses ''VarStack
 
 -- | create an empty stack
 empty :: Ident -> VarStack
@@ -89,19 +98,19 @@ new (VarStack (Ident i) xs c) = VarStack (Ident i) (n : xs) $ c + 1
 
 -- | given the current stack, give a new variable name
 curr :: VarStack -> Ident
-curr (VarStack i []      _) = i
+curr (VarStack i [] _)      = i
 curr (VarStack _ (x : _) _) = x
 
--- | rename an instruction with the given 
---   variable stack and possibly updte the stack 
+-- | rename an instruction with the given
+--   variable stack and possibly updte the stack
 renamePhi :: M.HashMap Ident VarStack -> PhiNode -> (M.HashMap Ident VarStack, PhiNode)
 renamePhi vars (PhiNode v _ xs) = (vars', PhiNode v v' xs)
   where
     vars' = M.adjust new v vars
     v' = curr $ vars' M.! v
 
--- | rename an instruction with the given 
---   variable stack and possibly updte the stack 
+-- | rename an instruction with the given
+--   variable stack and possibly updte the stack
 renameInstr :: M.HashMap Ident VarStack -> Instruction -> (M.HashMap Ident VarStack, Instruction)
 renameInstr vars instr = case instr' of
                            Value x (Just (Assignment d t)) -> upd x d t
@@ -124,10 +133,10 @@ rename :: MultiMap Ident Ident                                                  
 rename succs instrs phis stack (Node b cs) = fin $ foldl' rec (instrs', phis'', stack'') cs
   where
     -- update the stack with phi nodes in this block
-    fn (s, ps) p    = second (`S.insert` ps) $ renamePhi s p
+    fn (s, ps) p    = _2 %~ flip S.insert ps $ renamePhi s p
     (stack', ps)    = foldl' fn (stack, S.empty) $ phis M.! b
     -- update the stack with the instrs in this block
-    gn (s, is) i    = second ((is ++) . (: [])) $ renameInstr s i
+    gn (s, is) i    = _2 %~ (\x -> is ++ [x]) $ renameInstr s i
     (stack'', is)   = foldl' gn (stack', []) $ instrs M.! b
     -- update the instrs and phi nodes for the current block
     instrs'         = M.insert b is instrs
@@ -140,11 +149,14 @@ rename succs instrs phis stack (Node b cs) = fin $ foldl' rec (instrs', phis'', 
     -- recurse on the children nodes
     rec (i, p, s) n = rename succs i p s n
     -- return the original stack with updated counter
-    pop s           = (stack M.! variable s) { counter = counter s }
-    fin (i, p, s)   = (i, p, pop <$> s)
+    pop i s         = counter .~ (s ^. counter) $ (stack M.! i)
+    fin (i, p, s)   = (i, p, M.mapWithKey pop s)
 
 -- | combine the phi nodes with the instruction blocks
-combinePhi :: M.HashMap Ident Type -> M.HashMap Ident [Instruction] -> MultiMap Ident PhiNode -> M.HashMap Ident [Instruction]
+combinePhi :: M.HashMap Ident Type
+           -> M.HashMap Ident [Instruction]
+           -> MultiMap Ident PhiNode
+           -> M.HashMap Ident [Instruction]
 combinePhi types instrs phis = M.mapWithKey append instrs
   where
     instr (PhiNode v u vs)  = Value (Phi vs) (Just (Assignment u $ types M.! v))
@@ -153,7 +165,7 @@ combinePhi types instrs phis = M.mapWithKey append instrs
     after ps (Label l : xs) = Label l : ps ++ xs
     after ps xs             = ps ++ xs
 
--- | for the phi nodes of each block, try to merge 
+-- | for the phi nodes of each block, try to merge
 --   them together
 --
 --   converts things like
@@ -168,51 +180,46 @@ combinePhi types instrs phis = M.mapWithKey append instrs
 --   x: int = phi .here y;
 --   z: int = phi .here y .there z;
 --   ```
-mergePhi :: MultiMap Ident PhiNode -> MultiMap Ident PhiNode
-mergePhi phis = merge <$> phis
+mergePhi :: [Instruction] -> [Instruction]
+mergePhi = (^. _2) . foldl' merge (M.empty, [])
   where
-    merge ps     = foldl' (\ps p -> S.map (adjust p) ps) ps $ singles ps
-    singles ps   = M.elems . M.mapMaybeWithKey extract $ S.toMap ps
-    -- extract the phi nodes with a single label
-    extract (PhiNode _ v' [(i, l)]) _  = Just (v', i, l)
-    extract _                       _  = Nothing
-    -- for the given phi node, replace by the above
-    adjust (v', i, l) (PhiNode u v ls) = PhiNode u v $ fn <$> ls
+    -- go over this phi instruction and prepare to merge
+    merge (phis, instrs) (Value (Phi ls) (Just (Assignment d t))) = (phis', instrs ++ [instr])
       where
-        fn x = if x == (v', l) then (i, l) else x
+        ls'       = fn <$> ls
+        fn (v, l) = if M.member v phis && M.member l (phis M.! v)
+                    then ((phis M.! v) M.! l, l) else (v, l)
+        phis'     = M.insert d (M.fromList $ swap <$> ls') phis
+        instr     = Value (Phi ls') (Just (Assignment d t))
+    merge (phis, instrs) instr = (phis, instrs ++ [instr])
 
 -- | convert the given function into SSA from
 ssa :: Function -> Function
-ssa fn = Function n a t ilist
+ssa fn = finstrs .~ ilist $ fn
   where
     -- if the function has args add a new block
-    fn'          = Function n a t $ ablock ++ x
-    ls           = allLabels fn
-    ablock       = [Label $ freshLabel ls | not $ null a] ++ (arg <$> a)
-    arg a        = case a of Argument d t -> Value (Id d) (Just (Assignment d t))
+    ablock       = arg <$> fn ^. fargs
+    arg x        = case x of Argument d t -> Value (Id d) (Just (Assignment d t))
     -- create the CFG and frontier
-    gh           = cfg fn'
-    front        = dominationFrontier gh
+    cfg          = mkCFG $ finstrs %~ (ablock ++) $ fn
+    front        = dominationFrontier cfg
     -- get the phi nodes to be added to each block
     phis         = addPhi succs instrs front
-    succs        = edges $ successors gh
-    instrs       = instructions gh
-    tree         = dominationTree gh
-    ilist        = (combinePhi vars i (mergePhi p) M.!) =<< blocks gh
+    succs        = cfg ^. successors . edges
+    instrs       = cfg ^. instructions
+    tree         = dominationTree cfg
     -- create empty stacks for all variables (including func args)
-    args         = M.fromList $ (\(Argument d t) -> (d, t)) <$> a
     vars         = M.unions $ variables <$> M.elems instrs
-    vstack       = M.mapWithKey (\x _ -> empty x) vars
-    astack       = M.mapWithKey (\x _ -> singleton x) args
-    stack        = M.union astack vstack
+    stack       = M.mapWithKey (\x _ -> empty x) vars
     -- perform renaming of the blocks recursively
     (i, p, _)    = rename succs instrs phis stack tree
-    (n, a, t, x) = case fn of Function n a t i -> (n, a, t, i)
+    -- create the list of instructions
+    ilist        = (combinePhi vars i p M.!) =<< cfg ^. blocks
 
 -- | remove the phi nodes by adding relevant copy instructions
 --   in place of the phi nodes
 removePhi :: M.HashMap Ident [Instruction] -> M.HashMap Ident [Instruction]
-removePhi instrs = foldl' fn instrs' ps
+removePhi instrs = foldl' modify instrs' ps
   where
     -- filter all the phi instructions from this
     notPhi (Value (Phi _) _) = False
@@ -220,21 +227,18 @@ removePhi instrs = foldl' fn instrs' ps
     instrs'                  = filter notPhi <$> instrs
     -- extract all the phi instruction from this
     ps                       = unions $ phis <$> M.elems instrs
-    -- inster the copy instruction in the given block
-    fn m (d, t, v, l)        = M.adjust (adj d t v) l m
-    adj d t v is             = insert (copy d t v) is
+    -- insert the copy instruction in the given block
+    modify m (d, t, v, l)    = M.adjust (insert (copy d t v)) l m
     copy d t v               = Value (Id v) (Just (Assignment d t))
     -- insert an instruction before a terminating instr
-    insert i []              = [i]
-    insert i ls              = let li = last ls in if terminator li
-                               then init ls ++ [i, li] else ls ++ [i]
+    insert i ls              = case listToMaybe $ reverse ls of
+                                 Just li | terminator li -> init ls ++ [i, li]
+                                 _                       -> ls ++ [i]
 
 -- | convert the given function out of SSA form
 ssa' :: Function -> Function
-ssa' fn = case fn of Function n a t _ -> Function n a t ilist
+ssa' fn = finstrs .~ is $ fn
   where
-    gh        = cfg fn
-    instrs    = instructions gh
-    -- remove the phi nodes
-    instrs'   = removePhi instrs
-    ilist     = (instrs' M.!) =<< blocks gh
+    cfg = mkCFG fn
+    im  = removePhi $ cfg ^. instructions
+    is  = (im M.!) =<< (cfg ^. blocks)

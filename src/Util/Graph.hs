@@ -1,7 +1,12 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Util.Graph where
 
 import           Bril.Lang.AST
-import           Data.Bifunctor
+import           Control.Lens
 import           Data.Foldable
 import           Data.Hashable
 import           GHC.Generics
@@ -15,10 +20,13 @@ import qualified Data.HashSet        as S
 --   and all vertices have a key in the edges
 --   map
 data Graph a = Graph
-             { vertices :: S.HashSet a
-             , edges    :: MultiMap a a
+             { _vertices :: S.HashSet a
+             , _edges    :: MultiMap a a
              }
-             deriving (Show, Eq)
+             deriving (Show, Eq, Generic, Hashable)
+
+-- | make lenses for graph
+makeLenses ''Graph
 
 -- create a graph from the given matrix
 mkGraph :: (Eq a, Hashable a) => MultiMap a a -> Graph a
@@ -29,23 +37,21 @@ mkGraph m = Graph vs $ M.union m $ S.empty <$ S.toMap vs
 -- | create a list of graph vertices in post-order traversal
 --   starting from the given vertex
 postorder :: (Eq a, Hashable a) => Graph a -> a -> [a]
-postorder graph root = snd . fn S.empty $ root
+postorder graph root = fn S.empty root ^. _2
   where
     fn seen root = if S.member root seen then (seen, [])
-                   else second (++ [root]) $ foldl' upd (seen', []) next
+                   else _2 %~ (++ [root]) $ foldl' upd (seen', []) next
       where
-        children     = edges graph M.! root
+        children     = (graph ^. edges) M.! root
         next         = S.toList $ S.difference children seen
         seen'        = S.insert root seen
-        upd (s, l) n = second (l ++) $ fn s n
+        upd (s, l) n = (_2 %~ (l ++)) $ fn s n
 {-# SPECIALIZE postorder :: Graph Ident -> Ident -> [Ident] #-}
 {-# INLINEABLE postorder #-}
 
 -- | takes in a directed graph and reverses the edges
 invert :: (Eq a, Hashable a) => Graph a -> Graph a
-invert graph = graph { edges = M.union (transpose es) $ S.empty <$ es }
-  where
-    es = edges graph
+invert = edges %~ (\es -> M.union (transpose es) $ S.empty <$ es)
 {-# SPECIALIZE invert :: Graph Ident -> Graph Ident #-}
 {-# INLINEABLE invert #-}
 
@@ -61,7 +67,7 @@ search final transform collect graph = fn S.empty
       | otherwise = collect $ S.map (transform b . fn seen' a) next
       where
         seen' = S.insert b seen
-        next  = S.difference (edges graph M.! b) seen'
+        next  = S.difference ((graph ^. edges) M.! b) seen'
 {-# INLINABLE search #-}
 
 -- | whether the node a is reachable from the node b in the given graph
