@@ -1,8 +1,9 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
-module Bril.Structure.SSA (ssa, ssa') where
+module Bril.Structure.SSA (ssa, ssa', definitions) where
 
 import           Bril.Lang.AST
 import           Bril.Structure.CFG
@@ -26,6 +27,7 @@ variables = M.fromList . (fn =<<)
   where
     fn (Value _ (Just (Assignment d t))) = [(d, t)]
     fn _                                 = []
+{-# INLINABLE variables #-}
 
 -- | all the phi instructions in the given list of instructions
 --   as a set of the 4-tuple of destination, type, variable, label
@@ -34,6 +36,7 @@ phis = S.fromList . (fn =<<)
   where
     fn (Value (Phi ls) (Just (Assignment d t))) = (\(v, l) -> (d, t, v, l)) <$> ls
     fn _                                        = []
+{-# INLINABLE phis #-}
 
 -- | represents a phi node for a variable
 --   which contains the variable, the
@@ -61,6 +64,7 @@ addPhi succs instrs front = M.union result $ S.empty <$ instrs
       | otherwise   = phi phis v (S.difference phis x)
       where
         phis = S.union x $ unions $ S.map (front M.!) blocks
+{-# INLINABLE addPhi #-}
 
 -- | defines a variable stack with an internal counter
 --   which is incremented whenever a new variable name
@@ -78,28 +82,28 @@ makeLenses ''VarStack
 -- | create an empty stack
 empty :: Ident -> VarStack
 empty i = VarStack i [] 0
-
--- | create a singleton stack
-singleton :: Ident -> VarStack
-singleton i = VarStack i [i] 0
+{-# INLINABLE empty #-}
 
 -- | whether a variable is declared in this stack
 declared :: VarStack -> Bool
 declared (VarStack _ [] _) = False
 declared _                 = True
+{-# INLINABLE declared #-}
 
 -- | generate a new value for the
 --   stack and push it to the top,
 --   incrementing the counter
 new :: VarStack -> VarStack
-new (VarStack (Ident i) xs c) = VarStack (Ident i) (n : xs) $ c + 1
+new (VarStack i xs c) = VarStack i (name : xs) $ c + 1
   where
-    n = Ident . T.pack $ T.unpack i ++ "." ++ show c
+    name = Ident . T.pack $ T.unpack (unIdent i) ++ "." ++ show c
+{-# INLINABLE new #-}
 
 -- | given the current stack, give a new variable name
 curr :: VarStack -> Ident
 curr (VarStack i [] _)      = i
 curr (VarStack _ (x : _) _) = x
+{-# INLINABLE curr #-}
 
 -- | rename an instruction with the given
 --   variable stack and possibly updte the stack
@@ -108,6 +112,7 @@ renamePhi vars (PhiNode v _ xs) = (vars', PhiNode v v' xs)
   where
     vars' = M.adjust new v vars
     v' = curr $ vars' M.! v
+{-# INLINABLE renamePhi #-}
 
 -- | rename an instruction with the given
 --   variable stack and possibly updte the stack
@@ -117,20 +122,20 @@ renameInstr vars instr = case instr' of
                            _                               -> (vars, instr')
   where
     instr'    = mapArgs (\v -> curr $ vars M.! v) instr
-    upd x d t = let vs = M.adjust new d vars in
-                let d' = curr $ vs M.! d in
-                (vs, Value x . Just $ Assignment d' t)
+    upd x d t = (vs, Value x . Just $ Assignment d' t)
+      where
+        vs = M.adjust new d vars
+        d' = curr $ vs M.! d
+{-# INLINABLE renameInstr #-}
 
--- | take the CFG of a function, the added phi nodes, and
---   the list of instructions and rename the variables
---   recursively into SSA form
-rename :: MultiMap Ident Ident                                                              -- the successors map
-       -> M.HashMap Ident [Instruction]                                                     -- blocks map
-       -> MultiMap Ident PhiNode                                                            -- phi nodes
-       -> M.HashMap Ident VarStack                                                          -- variable stack
-       -> Tree Ident                                                                        -- current node in the dom tree
-       -> (M.HashMap Ident [Instruction], MultiMap Ident PhiNode, M.HashMap Ident VarStack) -- return the updated instrs, phi nodes, and stack
-rename succs instrs phis stack (Node b cs) = fin $ foldl' rec (instrs', phis'', stack'') cs
+-- | this is a type alias for the state that is 
+--   recursed on by the rename function
+type RecState = (M.HashMap Ident [Instruction], MultiMap Ident PhiNode, M.HashMap Ident VarStack)
+
+-- | take in the graph of the CFG, the state, and recurse
+--   on the domination tree to perform SSA renaming
+rename :: MultiMap Ident Ident -> RecState -> Tree Ident -> RecState
+rename succs (instrs, phis, stack) (Node b cs) = origStack $ foldl' (rename succs) state cs
   where
     -- update the stack with phi nodes in this block
     fn (s, ps) p    = _2 %~ flip S.insert ps $ renamePhi s p
@@ -146,24 +151,26 @@ rename succs instrs phis stack (Node b cs) = fin $ foldl' rec (instrs', phis'', 
       | declared $ stack'' M.! v = PhiNode v u ((curr $ stack'' M.! v, b) : xs)
       | otherwise                = PhiNode v u xs
     phis''          = foldl' (flip (M.adjust $ S.map hn)) phis' $ succs M.! b
-    -- recurse on the children nodes
-    rec (i, p, s) n = rename succs i p s n
+    -- we want to recurse on the children starting with this state
+    state           = (instrs', phis'', stack'')
     -- return the original stack with updated counter
     pop i s         = counter .~ (s ^. counter) $ (stack M.! i)
-    fin (i, p, s)   = (i, p, M.mapWithKey pop s)
+    origStack       = _3 %~ M.mapWithKey pop
+{-# INLINABLE rename #-}
 
 -- | combine the phi nodes with the instruction blocks
 combinePhi :: M.HashMap Ident Type
            -> M.HashMap Ident [Instruction]
            -> MultiMap Ident PhiNode
            -> M.HashMap Ident [Instruction]
-combinePhi types instrs phis = M.mapWithKey append instrs
+combinePhi types instrs phis = mergePhi <$> M.mapWithKey append instrs
   where
     instr (PhiNode v u vs)  = Value (Phi vs) (Just (Assignment u $ types M.! v))
     append v is             = after (instr <$> S.toList (phis M.! v)) is
     -- append the phi instruction after the label
     after ps (Label l : xs) = Label l : ps ++ xs
     after ps xs             = ps ++ xs
+{-# INLINABLE combinePhi #-}
 
 -- | for the phi nodes of each block, try to merge
 --   them together
@@ -192,6 +199,7 @@ mergePhi = (^. _2) . foldl' merge (M.empty, [])
         phis'     = M.insert d (M.fromList $ swap <$> ls') phis
         instr     = Value (Phi ls') (Just (Assignment d t))
     merge (phis, instrs) instr = (phis, instrs ++ [instr])
+{-# INLINABLE mergePhi #-}
 
 -- | convert the given function into SSA from
 ssa :: Function -> Function
@@ -210,11 +218,12 @@ ssa fn = finstrs .~ ilist $ fn
     tree         = dominationTree cfg
     -- create empty stacks for all variables (including func args)
     vars         = M.unions $ variables <$> M.elems instrs
-    stack       = M.mapWithKey (\x _ -> empty x) vars
+    stack        = M.mapWithKey (\x _ -> empty x) vars
     -- perform renaming of the blocks recursively
-    (i, p, _)    = rename succs instrs phis stack tree
+    (i, p, _)    = rename succs (instrs, phis, stack) tree
     -- create the list of instructions
     ilist        = (combinePhi vars i p M.!) =<< cfg ^. blocks
+{-# INLINABLE ssa #-}
 
 -- | remove the phi nodes by adding relevant copy instructions
 --   in place of the phi nodes
@@ -228,12 +237,10 @@ removePhi instrs = foldl' modify instrs' ps
     -- extract all the phi instruction from this
     ps                       = unions $ phis <$> M.elems instrs
     -- insert the copy instruction in the given block
-    modify m (d, t, v, l)    = M.adjust (insert (copy d t v)) l m
+    modify m (d, t, v, l)    = M.adjust (`insertAfter` [copy d t v]) l m
     copy d t v               = Value (Id v) (Just (Assignment d t))
-    -- insert an instruction before a terminating instr
-    insert i ls              = case listToMaybe $ reverse ls of
-                                 Just li | terminator li -> init ls ++ [i, li]
-                                 _                       -> ls ++ [i]
+
+{-# INLINABLE removePhi #-}
 
 -- | convert the given function out of SSA form
 ssa' :: Function -> Function
@@ -242,3 +249,14 @@ ssa' fn = finstrs .~ is $ fn
     cfg = mkCFG fn
     im  = removePhi $ cfg ^. instructions
     is  = (im M.!) =<< (cfg ^. blocks)
+{-# INLINABLE ssa' #-}
+
+-- | takes in an SSA function and return the
+--   block in which that definition is
+definitions :: CFG -> M.HashMap Ident Ident
+definitions cfg = M.fromList ls
+  where
+    ls            = assgn =<< M.toList (cfg ^. instructions)
+    assgn (l, is) = (,l) <$> catMaybes (destination <$> is)
+    destination x = (\(Assignment d _) -> d) <$> assignment x
+{-# INLINABLE definitions #-}

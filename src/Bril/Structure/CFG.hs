@@ -6,7 +6,7 @@
 module Bril.Structure.CFG where
 
 import           Bril.Lang.AST
-import           Control.Lens
+import           Control.Lens        hiding (indexed)
 import           Data.Foldable
 import           Data.Hashable
 import           Data.Maybe
@@ -58,6 +58,7 @@ freshLabel ls = findUnique 0
       | S.member (create idx) ls = findUnique $ idx + 1
       | otherwise                = create idx
     create = Ident . T.pack . ("b" ++) . show
+{-# INLINABLE freshLabel #-}
 
 -- | uniquely label each block in the list of basic blocks
 blockLabels :: Function -> [(Ident, [Instruction])]
@@ -76,13 +77,13 @@ blockLabels f = snd $ fn (labels, basicBlocks f)
 -- | takes in a function and returns a map from
 --   a block label to it's successors
 graph :: Function -> Graph Ident
-graph f = Graph ll $ foldl' fn init $ zip [0..] bs
+graph f = Graph (S.fromList ll) $ foldl' fn init $ indexed bs
   where
     ls   = basicBlocks f
-    ll   = allLabels f
     bs   = blockLabels f
+    ll   = (^. _1) <$> bs
     n    = length ls
-    init = M.fromList $ zip (S.toList ll) $ repeat S.empty
+    init = M.fromList $ zip ll $ repeat S.empty
     fn map (idx, (label, []))
       | idx < n - 1 = M.insert label (S.singleton . fst $ bs !! (idx + 1)) map
       | otherwise   = M.insert label S.empty map

@@ -26,6 +26,9 @@ library
   exposed-modules:
       Bril.Lang.AST
       Bril.Lang.Parse
+      Bril.Optim.DataFlow
+      Bril.Optim.DCE
+      Bril.Optim.Loop
       Bril.Structure.CFG
       Bril.Structure.Loop
       Bril.Structure.SSA

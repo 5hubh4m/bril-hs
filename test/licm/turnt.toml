@@ -1,0 +1,1 @@
+command = "bril2json < {filename} | stack run ssa | stack run licm | brili {args}"

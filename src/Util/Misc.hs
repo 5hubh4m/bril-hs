@@ -10,6 +10,14 @@ import qualified Data.HashSet        as S
 --   for the same key
 type MultiMap a b = M.HashMap a (S.HashSet b)
 
+-- | remove an element from a set
+unconsSet :: (Eq a, Hashable a) => S.HashSet a -> Maybe (a, S.HashSet a)
+unconsSet s
+  | S.null s  = Nothing
+  | otherwise = let h = head $ S.toList s in Just (h, S.delete h s)
+{-# SPECIALIZE unconsSet :: S.HashSet Ident -> Maybe (Ident, S.HashSet Ident) #-}
+{-# INLINABLE unconsSet #-}
+
 -- | find the intersection of all the sets in the given container
 intersections :: (Foldable t, Eq a, Hashable a) => t (S.HashSet a) -> S.HashSet a
 intersections x = if null x then S.empty else foldl1 S.intersection x
@@ -42,3 +50,8 @@ distinct (x : y : xs)
   | otherwise = x : distinct (y : xs)
 {-# SPECIALIZE distinct :: [Ident] -> [Ident] #-}
 {-# INLINABLE distinct #-}
+
+-- | zip with the list with it's index
+indexed :: [a] -> [(Int, a)]
+indexed = zip [0..]
+{-# INLINABLE indexed #-}

@@ -1,25 +1,18 @@
 extract = 'total_dyn_inst: (\d+)'
 benchmarks = './*.bril'
-timeout = 10
+timeout = 20
 
 [runs.baseline]
 pipeline = [
     "bril2json",
-    "stack run tdce",
-    "brili -p {args}",
-]
-
-[runs.ssa]
-pipeline = [
-    "bril2json",
     "stack run ssa",
     "brili -p {args}",
 ]
 
-[runs.roundtrip]
+[runs.licm]
 pipeline = [
     "bril2json",
     "stack run ssa",
-    "stack run nossa",
+    "stack run licm",
     "brili -p {args}",
 ]

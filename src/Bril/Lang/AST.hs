@@ -7,6 +7,7 @@ module Bril.Lang.AST where
 
 import           Control.Lens
 import           Data.Hashable
+import           Data.Maybe
 import           GHC.Generics
 import           Prelude       hiding (LT, GT, EQ)
 import qualified Data.Text     as T
@@ -134,6 +135,7 @@ args (Value (Load x) _)      = [x]
 args (Value (Phi xs) _)      = (^. _1) <$> xs
 args (Value (UnOp _ x) _)    = [x]
 args _                       = []
+{-# INLINABLE args #-}
 
 -- | given an instruction return it's list of labels
 labels :: Instruction -> [Ident]
@@ -143,21 +145,25 @@ labels (Effect (Guard _ x)) = [x]
 labels (Effect (Jmp x))     = [x]
 labels (Value (Phi xs) _)   = (^. _2) <$> xs
 labels _                    = []
+{-# INLINABLE labels #-}
 
 -- | given an instruction return it's list of funcs
 funcs :: Instruction -> [Ident]
 funcs (Value (Call x _) _) = [x]
 funcs _                    = []
+{-# INLINABLE funcs #-}
 
 -- | given an instruction return the value it contains
 literal :: Instruction -> Maybe Literal
 literal (Value (Constant v) _) = Just v
 literal _                      = Nothing
+{-# INLINABLE literal #-}
 
 -- | given an instruction return it's assignment
 assignment :: Instruction -> Maybe Assignment
 assignment (Value _ a) = a
 assignment _           = Nothing
+{-# INLINABLE assignment #-}
 
 -- | change the arguments of an instruction by
 --   applying the given function
@@ -176,12 +182,14 @@ mapArgs f (Value (Load y) a)       = Value (Load (f y)) a
 mapArgs f (Value (UnOp o x) a)     = Value (UnOp o (f x)) a
 mapArgs f (Value (Phi xs) a)       = Value (Phi $ (_1 %~ f) <$> xs) a
 mapArgs _ x                        = x
+{-# INLINABLE mapArgs #-}
 
 -- | change the destination of an instruction by
 --   applying the given function
 mapDest :: (Ident -> Ident) -> Instruction -> Instruction
 mapDest f (Value x (Just (Assignment d t))) = Value x . Just $ Assignment (f d) t
 mapDest _ x                                 = x
+{-# INLINABLE mapDest #-}
 
 -- | defines an operation to extract an opName object
 --   from an instruction
@@ -212,6 +220,7 @@ instance InstrOp Op where
   opName Or     = Ident "or"
   opName Not    = Ident "not"
   opName PtrAdd = Ident "ptradd"
+  {-# INLINABLE opName #-}
 
 -- | define an instance of InstrOp for value instructions
 instance InstrOp ValueInstruction where
@@ -223,6 +232,7 @@ instance InstrOp ValueInstruction where
   opName Id {}         = Ident "id"
   opName Load {}       = Ident "load"
   opName Phi {}        = Ident "phi"
+  {-# INLINABLE opName #-}
 
 -- | define an instance of InstrOp for effect instructions
 instance InstrOp EffectInstruction where
@@ -236,14 +246,7 @@ instance InstrOp EffectInstruction where
   opName Ret {}    = Ident "ret"
   opName Speculate = Ident "speculate"
   opName Store {}  = Ident "store"
-
--- | defines an operation to extract whether the instruction has a side effect
-effect :: Instruction -> Bool
-effect (Effect Nop)       = False
-effect Effect {}          = True
-effect (Value Call {} _)  = True
-effect (Value Alloc {} _) = True
-effect _                  = False
+  {-# INLINABLE opName #-}
 
 -- | whether a given instruction is a terminating instruction
 terminator :: Instruction -> Bool
@@ -251,3 +254,10 @@ terminator (Effect Jmp {}) = True
 terminator (Effect Ret {}) = True
 terminator (Effect Br {})  = True
 terminator _               = False
+{-# INLINABLE terminator #-}
+
+-- | insert the given list of instructions in a given basic block
+insertAfter :: [Instruction] -> [Instruction] -> [Instruction]
+insertAfter block is = case listToMaybe $ reverse block of
+                         Just li | terminator li -> init block ++ is ++ [li]
+                         _                       -> block ++ is

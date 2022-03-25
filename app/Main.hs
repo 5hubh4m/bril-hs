@@ -1,7 +1,8 @@
 import           Bril.Lang.AST
 import           Bril.Lang.Parse
+import           Bril.Optim.DCE
+import           Bril.Optim.Loop
 import           Bril.Structure.CFG
-import           Bril.Structure.Loop
 import           Bril.Structure.SSA
 import           Data.Aeson
 import           Data.Maybe
@@ -41,19 +42,16 @@ printDomTree f = putStrLn . appendSpaces . drawTree . (show <$>) . dominationTre
 printDomFront :: Function -> IO ()
 printDomFront f = mapM_ printLine . M.toList . dominationFrontier $ mkCFG f
 
--- | print all the backedges in a function
-printBackEdges :: Function -> IO ()
-printBackEdges f = mapM_ print . S.toList . backedges $ mkCFG f
-
 -- | perform the given action with the program
 action :: Program -> String -> IO ()
-action (Program fs) "ssa" = B.putStr . encode . Program $ ssa <$> fs
-action (Program fs) "ssa'" = B.putStr . encode . Program $ ssa' <$> fs
-action (Program fs) "tree" = mapM_ (\x -> printName x *> printDomTree x) fs
+action (Program fs) "ssa"   = B.putStr . encode . Program $ tdce . ssa . tdce <$> fs
+action (Program fs) "nossa" = B.putStr . encode . Program $ tdce . ssa' . tdce <$> fs
+action (Program fs) "tdce" = B.putStr . encode . Program $ tdce <$> fs
+action (Program fs) "licm" = B.putStr . encode . Program $ licm <$> fs
+action (Program fs) "tree"  = mapM_ (\x -> printName x *> printDomTree x) fs
 action (Program fs) "front" = mapM_ (\x -> printName x *> printDomFront x) fs
-action (Program fs) "doms" = mapM_ (\x -> printName x *> printDoms x) fs
-action (Program fs) "backedges" = mapM_ (\x -> printName x *> printBackEdges x) fs
-action (Program fs) _ = return ()
+action (Program fs) "doms"  = mapM_ (\x -> printName x *> printDoms x) fs
+action (Program fs) _       = return ()
 
 main :: IO ()
 main = do bytes <- B.getContents

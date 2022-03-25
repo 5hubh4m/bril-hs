@@ -31,17 +31,22 @@ which removes all the `phi` instructions and replaces with variable copies.
 The module [`Bril.Structure.Loop`](src/Bril/Structure/Loop.hs)
 exports functions to extract all the natural loops in a Bril program.
 
+The module [`Bril.Optim`](src/Bril/Optim) contains all the optimisation passes and
+currently implements Trivial Dead Code Elimination ([`Bril.Optim.DCE`](src/Bril/Optim/DCE.hs)),
+Data Dlow Analysis (just Live Variables for now, [`Bril.Optim.DataFlow`](src/Bril/Optim/DataFlow.hs))
+and Loop Invariant Code Motion ([`Bril.Optim.Loop`](src/Bril/Optim/Loop.hs)).
+
 ## Building and Using
 
 The package is built using [`stack`](https://docs.haskellstack.org/en/stable/README/)
 which can be installed using `brew install haskell-stack` on macOS.
 
-Currently the [`Main.hs`](app/Main.hs) file implements dominator utilities and SSA conversion.
-It takes in a JSON Bril program and outputs the result.
+Currently the [`Main.hs`](app/Main.hs) file implements dominator utilities and SSA conversion,
+and the optimization passes. It takes in a JSON Bril program and outputs the result.
 
 ```
 $> stack build
-$> bril2json < path/to/bril/program | stack run [doms | front | tree | ssa | ssa']
+$> bril2json < path/to/bril/program | stack run [doms | front | tree | ssa | nossa | tdce | licm]
 ```
 
 ## Testing
@@ -112,3 +117,28 @@ if-const,baseline,5
 if-const,ssa,6
 if-const,roundtrip,6
 ```
+
+### Testing LICM
+
+The directory [`test\licm`](test/licm) contains two test suites. It has a `turnt.toml`
+to test whether the LICM produces the same output as the original program. There is also
+a `brench.toml` that measures the impact of LICM optimization.
+
+```
+$> cd test/licm
+$> brench brench.toml
+...
+```
+
+The file [`performance.csv`](test/licm/performance.csv) contains the result on these benchmarks.
+
+```
+$> cat test/licm/performance.csv
+...
+,,min,0
+,,max,22.584
+,,avg,3.617
+,,stddev,5.243
+```
+
+The average speedup obtained over SSA is 3.6%.

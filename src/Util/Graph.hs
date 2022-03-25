@@ -33,6 +33,8 @@ mkGraph :: (Eq a, Hashable a) => MultiMap a a -> Graph a
 mkGraph m = Graph vs $ M.union m $ S.empty <$ S.toMap vs
   where
     vs = S.union (M.keysSet m) $ unions $ M.elems m
+{-# SPECIALIZE mkGraph :: MultiMap Ident Ident -> Graph Ident #-}
+{-# INLINEABLE mkGraph #-}
 
 -- | create a list of graph vertices in post-order traversal
 --   starting from the given vertex
